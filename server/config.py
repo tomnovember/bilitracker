@@ -2,7 +2,7 @@
 import os
 
 # 版本号 - 更新代码时同步修改这里和manifest.json
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 # 存储路径：数据库、settings.json、音频缓存均在此目录
 # 可通过环境变量 BILITRACKER_DIR 自定义，默认放在用户主目录下的 BiliTracker 文件夹

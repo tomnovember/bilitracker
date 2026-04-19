@@ -4,7 +4,7 @@ import os
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 # 将 CUDA bin 目录加入 DLL 搜索路径（Windows Python 3.8+ 必须用 add_dll_directory）
-# 按常见 CUDA 安装路径依次尝试，找到就加；无 GPU 时跳过
+# 按常见 CUDA 版本依次尝试，找到就加；无 GPU 时跳过
 for _cuda_ver in ["v12.6", "v12.4", "v12.2", "v12.0", "v11.8", "v13.2"]:
     _cuda_bin = rf"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\{_cuda_ver}\bin\x64"
     if os.path.exists(_cuda_bin):

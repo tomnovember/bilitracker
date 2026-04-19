@@ -69,6 +69,11 @@
 .bt-light.bt-yellow { background: #f5c542; box-shadow: 0 0 4px #f5c54288; }
 .bt-light.bt-red    { background: #f55050; box-shadow: 0 0 4px #f5505088; }
 .bt-light.bt-gray   { background: #555; }
+.bt-light.bt-asr    { background: #f5c542; animation: bt-asr-blink 1s steps(1) infinite; }
+@keyframes bt-asr-blink {
+  0%   { opacity: 1;    box-shadow: 0 0 5px #f5c542aa; }
+  50%  { opacity: 0.15; box-shadow: none; }
+}
 
 .bt-balance {
   font-size: 10px;

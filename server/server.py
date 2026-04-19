@@ -1314,7 +1314,7 @@ def main():
 
     print(f"""
 ╔══════════════════════════════════════════╗
-║         BiliTracker Server v1.0         ║
+║        BiliTracker Server v1.3.0        ║
 ╠══════════════════════════════════════════╣
 ║  存储目录: {STORAGE_DIR:<28s} ║
 ║  数据库:   bilitracker.db                ║

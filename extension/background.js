@@ -51,20 +51,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (msg.type === "GET_CURRENT_VIDEO") {
-    // 侧边栏请求当前视频信息
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: "GET_VIDEO_INFO" }, (response) => {
-          sendResponse(response || null);
-        });
-      } else {
-        sendResponse(null);
-      }
-    });
-    return true;
-  }
-
   if (msg.type === "GET_BALANCE") {
     // content.js 和 sidebar.js 都用这个消息获取余额
     sendResponse({ cache: balanceCache.data, error: balanceCache.error, ts: balanceCache.ts });

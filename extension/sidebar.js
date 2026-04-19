@@ -105,10 +105,10 @@ function fmtChars(n) {
 }
 
 // 根据服务器返回的视频信息统一更新字幕状态
-// ASR 状态文字：三态分开，避免"排队中"掩盖"检测中"
 function _asrStatusText(bvId) {
-  if (asrBusy && asrCurrentBv === bvId) return '转写中...';
-  if (_asrTimers.has(bvId)) return '检测字幕...';
+  const entry = _asrState.get(bvId);
+  if (entry?.status === 'running') return '转写中...';
+  if (entry?.status === 'waiting') return '检测字幕...';
   return '排队中...';
 }
 
@@ -202,40 +202,67 @@ function appendSubError(msg) {
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-// 已确认入队/转写中的 bvId（不再重复入队）
-const _asrEnqueued = new Set();
-// 待确认计时器：等待字幕检测稳定后再决定是否转写（bvId → setTimeout id）
-const _asrTimers = new Map();
+// ASR 状态机：单一 Map 替代 _asrEnqueued + _asrTimers 两个集合
+// status: 'waiting'（5s 观察期）| 'queued'（队列中）| 'running'（转写中）
+const _asrState = new Map(); // bvId → { status, timer? }
 
-// 统一处理 autoAsr 入队逻辑，延迟 5s 确认无字幕后才真正入队
 function _maybeEnqueueASR(bvId, hasSubtitleAlready) {
   if (hasSubtitleAlready) {
-    // 有字幕 → 取消待定计时器
-    if (_asrTimers.has(bvId)) {
-      clearTimeout(_asrTimers.get(bvId));
-      _asrTimers.delete(bvId);
+    const entry = _asrState.get(bvId);
+    if (entry?.status === 'waiting') {
+      clearTimeout(entry.timer);
+      _asrState.delete(bvId);
+    } else if (entry?.status === 'queued') {
+      const idx = asrQueue.indexOf(bvId);
+      if (idx > -1) asrQueue.splice(idx, 1);
+      _asrState.delete(bvId);
     }
+    // 'running' 无法取消，让它自然完成
     return false;
   }
   if (!autoAsr || !bvId) return false;
-  if (_asrEnqueued.has(bvId)) return true;  // 已在队列/转写中
-  if (_asrTimers.has(bvId)) return true;    // 已在等待期
+  if (_asrState.has(bvId)) return true; // 已在状态机中
   // 延迟 5s：等 content.js 初始化、B站字幕检测完成后再确认
-  const tid = setTimeout(() => {
-    _asrTimers.delete(bvId);
-    _asrEnqueued.add(bvId);
+  const timer = setTimeout(() => {
+    _asrState.set(bvId, { status: 'queued' });
     enqueueASR(bvId);
   }, 5000);
-  _asrTimers.set(bvId, tid);
+  _asrState.set(bvId, { status: 'waiting', timer });
   return true;
 }
 
-// ── 视频信息 ──
-async function loadVideoInfo() {
+// ── 字幕状态：查 DB，失败/未入库时降级到 content.js 上报的状态 ──
+async function applySubtitleStatusFromDB(bvId, hasSub) {
   try {
-    const response = await new Promise(resolve =>
-      chrome.runtime.sendMessage({ type: 'GET_CURRENT_VIDEO' }, resolve));
-    if (response && response.bvId) {
+    const r = await fetch(API + '/api/video/' + bvId);
+    if (r.ok) { applySubtitleStatus(await r.json()); return; }
+  } catch {}
+  if (_maybeEnqueueASR(bvId, hasSub)) {
+    setSubBadge('warn', _asrStatusText(bvId));
+  } else {
+    setSubBadge(hasSub ? 'ok' : 'off', hasSub ? '字幕 ✓' : '无字幕', !hasSub);
+  }
+}
+
+// ── 视频信息 ──
+// tabs 由调用方传入，避免重复查询
+async function loadVideoInfo() {
+  let tab = null;
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    tab = tabs[0] || null;
+  } catch {}
+
+  if (tab?.id) {
+    const response = await new Promise(resolve => {
+      const timer = setTimeout(() => resolve(null), 3000);
+      chrome.tabs.sendMessage(tab.id, { type: 'GET_VIDEO_INFO' }, resp => {
+        clearTimeout(timer);
+        resolve(chrome.runtime.lastError ? null : (resp || null));
+      });
+    });
+
+    if (response?.bvId) {
       currentBvId = response.bvId;
       currentVideo = response.videoData;
       document.getElementById('vi-title').textContent = currentVideo.title || currentBvId;
@@ -243,70 +270,47 @@ async function loadVideoInfo() {
         `${currentVideo.up_name || ''} · ${currentVideo.duration ? Math.floor(currentVideo.duration/60)+'分钟' : ''}`;
       document.getElementById('vi-server').className = 'vi-badge ' + (response.serverConnected ? 'ok' : 'off');
       document.getElementById('vi-server').textContent = response.serverConnected ? 'Server ✓' : 'Server ✗';
-      // 统一查DB拿字幕状态和字数
-      try {
-        const r = await fetch(API + '/api/video/' + currentBvId);
-        if (r.ok) {
-          applySubtitleStatus(await r.json());
-        } else {
-          // 视频未入库（新视频）—— 依然尝试 autoAsr
-          const hasSub = response.subtitleExtracted || response.hasSubtitle;
-          if (_maybeEnqueueASR(currentBvId, hasSub)) {
-            setSubBadge('warn', _asrStatusText(currentBvId));
-          } else {
-            setSubBadge(hasSub ? 'ok' : 'off', hasSub ? '字幕 ✓' : '无字幕', !hasSub);
-          }
-        }
-      } catch {
-        const hasSub = response.subtitleExtracted || response.hasSubtitle;
-        if (_maybeEnqueueASR(currentBvId, hasSub)) {
-          setSubBadge('warn', _asrStatusText(currentBvId));
-        } else {
-          setSubBadge(hasSub ? 'ok' : 'off', hasSub ? '字幕 ✓' : '无字幕', !hasSub);
-        }
-      }
+      await applySubtitleStatusFromDB(currentBvId, response.subtitleExtracted || response.hasSubtitle);
     } else {
-      await fallbackFromTabUrl();
+      await fallbackFromTab(tab);
     }
-  } catch { await fallbackFromTabUrl(); }
+  } else {
+    await fallbackFromTab(null);
+  }
+
   loadBalance();
   loadHistoryBar();
 }
 
-async function fallbackFromTabUrl() {
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tabs[0]?.url) {
-      const match = tabs[0].url.match(/\/video\/(BV[a-zA-Z0-9]+)/);
-      if (match) {
-        currentBvId = match[1];
-        document.getElementById('vi-title').textContent = tabs[0].title?.replace(/_哔哩哔哩_bilibili/, '').trim() || currentBvId;
-        document.getElementById('vi-meta').textContent = currentBvId;
-        try {
-          const r = await fetch(API + '/api/video/' + currentBvId);
-          if (r.ok) {
-            const v = await r.json();
-            document.getElementById('vi-title').textContent = v.title || currentBvId;
-            document.getElementById('vi-meta').textContent = `${v.up_name || ''} · ${v.duration ? Math.floor(v.duration/60)+'分钟' : ''}`;
-            document.getElementById('vi-server').className = 'vi-badge ok';
-            document.getElementById('vi-server').textContent = 'Server ✓';
-            applySubtitleStatus(v);
-          } else {
-            // 视频未入库，也尝试 autoAsr
-            if (_maybeEnqueueASR(currentBvId, false)) {
-              setSubBadge('warn', _asrStatusText(currentBvId));
-            } else {
-              setSubBadge('off', '无字幕', true);
-            }
-          }
-        } catch {}
-        return;
-      }
-    }
+// content.js 无响应时从 tab URL/title 降级，使用已有的 tab 对象不重复查询
+async function fallbackFromTab(tab) {
+  const match = tab?.url?.match(/\/video\/(BV[a-zA-Z0-9]+)/);
+  if (!match) {
     document.getElementById('vi-title').textContent = '未检测到B站视频';
     document.getElementById('vi-meta').textContent = '请打开一个B站视频页面';
-  } catch {
-    document.getElementById('vi-title').textContent = '未检测到B站视频';
+    return;
+  }
+  currentBvId = match[1];
+  document.getElementById('vi-title').textContent =
+    tab.title?.replace(/_哔哩哔哩_bilibili/, '').trim() || currentBvId;
+  document.getElementById('vi-meta').textContent = currentBvId;
+  try {
+    const r = await fetch(API + '/api/video/' + currentBvId);
+    if (r.ok) {
+      const v = await r.json();
+      document.getElementById('vi-title').textContent = v.title || currentBvId;
+      document.getElementById('vi-meta').textContent =
+        `${v.up_name || ''} · ${v.duration ? Math.floor(v.duration/60)+'分钟' : ''}`;
+      document.getElementById('vi-server').className = 'vi-badge ok';
+      document.getElementById('vi-server').textContent = 'Server ✓';
+      applySubtitleStatus(v);
+      return;
+    }
+  } catch {}
+  if (_maybeEnqueueASR(currentBvId, false)) {
+    setSubBadge('warn', _asrStatusText(currentBvId));
+  } else {
+    setSubBadge('off', '无字幕', true);
   }
 }
 
@@ -340,50 +344,52 @@ function updateAsrBar() {
 }
 
 async function processASRQueue() {
-  if (asrBusy || asrQueue.length === 0) return;
-  asrBusy = true;
-  asrCurrentBv = asrQueue.shift();
-  updateAsrBar();
+  if (asrBusy) return; // 防止重入
+  while (asrQueue.length > 0) {
+    asrBusy = true;
+    asrCurrentBv = asrQueue.shift();
+    _asrState.set(asrCurrentBv, { status: 'running' });
+    updateAsrBar();
 
-  try {
-    const whisperModel = document.getElementById('whisper-model').value;
-    const keepAudio = false; // 后续可从设置读取
-    const r = await fetch(API + '/api/extract_subtitle', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bv_id: asrCurrentBv, whisper_model: whisperModel, keep_audio: keepAudio })
-    });
-    if (!r.ok) throw new Error('request failed');
+    try {
+      const whisperModel = document.getElementById('whisper-model').value;
+      const keepAudio = false;
+      const r = await fetch(API + '/api/extract_subtitle', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bv_id: asrCurrentBv, whisper_model: whisperModel, keep_audio: keepAudio })
+      });
+      if (!r.ok) throw new Error('request failed');
 
-    const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
-    while (true) {
-      const { done, value } = await reader.read(); if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const lines = buf.split('\n'); buf = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const d = JSON.parse(line.slice(6));
-          // 只有转写的是当前视频才更新 UI
-          if (asrCurrentBv === currentBvId) {
-            if (d.progress) { pbShow(d.progress); setSubBadge('warn', '转写中...'); }
-            if (d.error) { pbDone(); setSubBadge('off', '无字幕', true); }
-            if (d.done) {
-              pbDone();
-              const cnt = d.char_count ? ' ' + fmtChars(d.char_count) : '';
-              setSubBadge('ok', '字幕 ✓' + cnt);
-              chatSessionId = null;
-              notifyContentSubtitleReady();
+      const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const d = JSON.parse(line.slice(6));
+            if (asrCurrentBv === currentBvId) {
+              if (d.progress) { pbShow(d.progress); setSubBadge('warn', '转写中...'); }
+              if (d.error) { pbDone(); setSubBadge('off', '无字幕', true); }
+              if (d.done) {
+                pbDone();
+                const cnt = d.char_count ? ' ' + fmtChars(d.char_count) : '';
+                setSubBadge('ok', '字幕 ✓' + cnt);
+                chatSessionId = null;
+                notifyContentSubtitleReady();
+              }
             }
-          }
-        } catch {}
+          } catch {}
+        }
       }
-    }
-  } catch {}
+    } catch {}
 
-  asrBusy = false;
-  asrCurrentBv = null;
-  updateAsrBar();
-  processASRQueue(); // 处理下一个
+    _asrState.delete(asrCurrentBv); // 处理完成，释放状态
+    asrBusy = false;
+    asrCurrentBv = null;
+    updateAsrBar();
+  }
 }
 
 // ── 通知悬浮窗字幕已就绪 ──
@@ -397,7 +403,7 @@ function notifyContentSubtitleReady() {
 
 // ── 历史对话 ──
 let _historySessions = [];
-let _historyLoadedBv = null;  // 记录已加载历史的视频，避免轮询重复显示
+let _historyLoadedBv = null;  // 用户点击加载历史后置为 currentBvId，防止切回同一视频时重复显示历史条
 
 async function loadHistoryBar() {
   const bar = document.getElementById('history-bar');
@@ -444,7 +450,7 @@ document.getElementById('history-load-btn').addEventListener('click', async () =
   document.getElementById('history-bar').style.display = 'none';
 });
 
-async function loadBalance() {
+function loadBalance() {
   chrome.runtime.sendMessage({ type: 'GET_BALANCE' }, resp => {
     if (chrome.runtime.lastError || !resp?.cache) return;
     const d = resp.cache;
@@ -453,20 +459,24 @@ async function loadBalance() {
     el.textContent = '¥' + d.total_balance;
     el.style.color = parseFloat(d.total_balance) < 1 ? '#f55050' : '#888';
   });
+}
+
+// 版本检查只在 sidebar 启动时运行一次，不随视频切换重复请求
+async function checkVersionOnce() {
+  if (document.getElementById('vi-update-warn')) return;
   try {
-    const r = await fetch(API + '/api/health');
+    const r = await fetch(API + '/api/health', { signal: AbortSignal.timeout(3000) });
+    if (!r.ok) return;
     const d = await r.json();
-    if (d.version) {
-      const extVer = chrome.runtime.getManifest().version;
-      if (d.version !== extVer && !document.getElementById('vi-update-warn')) {
-        const el = document.createElement('div');
-        el.id = 'vi-update-warn';
-        el.style.cssText = 'padding:6px 14px;background:#3a2a10;color:#f5c542;font-size:10px;border-bottom:1px solid #3a3a1a;cursor:pointer';
-        el.textContent = '⚠ 版本不一致，请到 chrome://extensions 点刷新';
-        el.addEventListener('click', () => chrome.tabs.create({url:'chrome://extensions'}));
-        document.querySelector('.video-info')?.after(el);
-      }
-    }
+    if (!d.version) return;
+    const extVer = chrome.runtime.getManifest().version;
+    if (d.version === extVer) return;
+    const el = document.createElement('div');
+    el.id = 'vi-update-warn';
+    el.style.cssText = 'padding:6px 14px;background:#3a2a10;color:#f5c542;font-size:10px;border-bottom:1px solid #3a3a1a;cursor:pointer';
+    el.textContent = '⚠ 版本不一致，请到 chrome://extensions 点刷新';
+    el.addEventListener('click', () => chrome.tabs.create({ url: 'chrome://extensions' }));
+    document.querySelector('.video-info')?.after(el);
   } catch {}
 }
 
@@ -677,7 +687,8 @@ document.getElementById('summ-btn').addEventListener('click', async () => {
           }
           if (d.done) {
             pbDone(); loadBalance();
-            if (asrRan) { chatSessionId = null; notifyContentSubtitleReady(); }
+            notifyContentSubtitleReady();
+            if (asrRan) { chatSessionId = null; }
             const raw = fullDelta.join('');
             renderSummary(raw, mainDiv);
             bubble._data = { type: 'summary', raw };
@@ -828,8 +839,10 @@ document.getElementById('c-input').addEventListener('keydown', e => {
 
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'); }
 
-// ── 每视频对话状态缓存 ──
+// ── 每视频对话状态缓存（LRU，最多保留10个视频）──
 const videoStates = {};
+const _videoStatesOrder = [];
+const MAX_VIDEO_STATES = 10;
 
 function saveVideoState(bvId) {
   if (!bvId) return;
@@ -839,6 +852,15 @@ function saveVideoState(bvId) {
     if (el._data) messages.push(el._data);
   });
   videoStates[bvId] = { sessionId: chatSessionId, messages };
+
+  // 维护 LRU 顺序
+  const idx = _videoStatesOrder.indexOf(bvId);
+  if (idx > -1) _videoStatesOrder.splice(idx, 1);
+  _videoStatesOrder.unshift(bvId);
+  if (_videoStatesOrder.length > MAX_VIDEO_STATES) {
+    const oldest = _videoStatesOrder.pop();
+    delete videoStates[oldest];
+  }
 }
 
 function restoreVideoState(bvId) {
@@ -868,20 +890,45 @@ function restoreVideoState(bvId) {
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-// ── 视频切换检测 + 设置同步 ──
+// ── 视频切换检测 + 设置同步（事件驱动，无轮询）──
 let lastBv = null;
-setInterval(async () => {
-  const prevBvId = currentBvId;
-  await Promise.all([loadVideoInfo(), loadSettings()]); // 设置有变化才真正执行，否则立即返回
-  if (currentBvId && currentBvId !== lastBv) {
-    saveVideoState(prevBvId);
-    lastBv = currentBvId;
-    _historyLoadedBv = null;
-    restoreVideoState(currentBvId);
-    // 切到新视频时，若该视频已在队列中则提升到队首
-    if (asrQueue.includes(currentBvId)) enqueueASR(currentBvId);
-  }
-}, 1000);
+let _updating = false;
+let _pendingUpdate = false;
 
-// 先加载设置再初始化视频信息，确保 autoAsr 状态正确
-loadSettings().finally(() => loadVideoInfo());
+async function onVideoChanged() {
+  if (_updating) { _pendingUpdate = true; return; }
+  _updating = true;
+  _pendingUpdate = false;
+  try {
+    const prevBvId = currentBvId;
+    await Promise.all([loadVideoInfo(), loadSettings()]);
+    if (currentBvId && currentBvId !== lastBv) {
+      saveVideoState(prevBvId);
+      lastBv = currentBvId;
+      _historyLoadedBv = null;
+      restoreVideoState(currentBvId);
+      const entry = _asrState.get(currentBvId);
+      if (entry?.status === 'queued') enqueueASR(currentBvId);
+    }
+  } finally {
+    _updating = false;
+    if (_pendingUpdate) setTimeout(onVideoChanged, 0);
+  }
+}
+
+// content.js 导航时推送
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "VIDEO_CHANGED") onVideoChanged();
+});
+
+// sidebar 从后台切回时刷新
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) onVideoChanged();
+});
+
+// 设置偶尔变更，每30秒同步一次（轻量）
+setInterval(loadSettings, 30000);
+
+// 先加载设置再初始化视频信息，确保 autoAsr 状态正确；版本检查只跑一次
+loadSettings().finally(() => onVideoChanged());
+checkVersionOnce();

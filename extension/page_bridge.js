@@ -37,13 +37,16 @@
       const d = window.__INITIAL_STATE__;
       if (!d || !d.videoData) return false;
 
-      // 移除旧bridge
-      document.getElementById("__bt_state_bridge")?.remove();
-
-      const el = document.createElement("div");
-      el.id = "__bt_state_bridge";
-      el.style.display = "none";
-      el.setAttribute("data-ready", "1");
+      let el = document.getElementById("__bt_state_bridge");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "__bt_state_bridge";
+        el.style.display = "none";
+        document.body.appendChild(el);
+      }
+      // 清除旧字幕URL，更新数据，最后设 ready 触发 observer
+      el.removeAttribute("data-subtitle-url");
+      el.removeAttribute("data-ready");
       el.textContent = JSON.stringify({
         videoData: {
           bvid: d.videoData.bvid,
@@ -85,36 +88,59 @@
           return { tag_name: t.tag_name || t };
         })
       });
-      document.body.appendChild(el);
+      el.setAttribute("data-ready", "1");
       return true;
     } catch(e) {
       return false;
     }
   }
 
-  // 立即尝试，如果没准备好就轮询
+  // fetchSubtitleUrl 去重：记录已为哪个 bvid 发起过请求，避免并发重复调用
+  var _fetchedForBvid = null;
+
+  // 立即尝试，如果没准备好就轮询；bridge 就绪后获取字幕URL
   if (!extractAndBridge()) {
-    var attempts = 0;
-    var timer = setInterval(function() {
-      attempts++;
-      if (extractAndBridge() || attempts > 30) {
-        clearInterval(timer);
+    var _initAttempts = 0;
+    var _initTimer = setInterval(function() {
+      _initAttempts++;
+      if (extractAndBridge() || _initAttempts > 30) {
+        clearInterval(_initTimer);
+        fetchSubtitleUrl();
       }
     }, 500);
+  } else {
+    fetchSubtitleUrl();
   }
 
   // 监听SPA路由变化，重新提取
   var lastUrl = location.href;
+  var _lastTryUpdateTimer = null; // 用于取消上一次未完成的重试
   setInterval(function() {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
-      // 等页面数据更新
-      setTimeout(function() {
-        extractAndBridge();
-        fetchSubtitleUrl(); // 路由切换后重新获取字幕
-      }, 1500);
+      var newBvid = (location.pathname.match(/\/video\/(BV[a-zA-Z0-9]+)/) || [])[1];
+      if (!newBvid) return;
+
+      // 取消上一次尚未完成的重试，重置字幕获取标记
+      if (_lastTryUpdateTimer) { clearTimeout(_lastTryUpdateTimer); _lastTryUpdateTimer = null; }
+      _fetchedForBvid = null;
+
+      var _tryAttempts = 0;
+      function tryUpdate() {
+        var d = window.__INITIAL_STATE__;
+        if (d && d.videoData && d.videoData.bvid === newBvid) {
+          _lastTryUpdateTimer = null;
+          extractAndBridge();
+          fetchSubtitleUrl();
+        } else if (_tryAttempts++ < 40) {
+          _lastTryUpdateTimer = setTimeout(tryUpdate, 500);
+        } else {
+          _lastTryUpdateTimer = null;
+        }
+      }
+      _lastTryUpdateTimer = setTimeout(tryUpdate, 300);
     }
-  }, 1000);
+  }, 500);
 
   // ── 主动获取字幕URL ──
   function fetchSubtitleUrl() {
@@ -123,6 +149,9 @@
     var bvid = d.videoData.bvid;
     var cid = d.videoData.cid;
     if (!bvid || !cid) return;
+    // 同一个视频只请求一次，防止并发重复调用
+    if (_fetchedForBvid === bvid) return;
+    _fetchedForBvid = bvid;
 
     // 先检查__INITIAL_STATE__里是否已有subtitle_url
     var subList = (d.videoData.subtitle && d.videoData.subtitle.list) || [];
@@ -170,6 +199,6 @@
       });
   }
 
-  // bridge创建后获取字幕URL
+  // 兜底：2s 后再试一次（仅在首次调用因数据未就绪提前返回时生效；若已成功发起请求则 _fetchedForBvid 去重会跳过）
   setTimeout(fetchSubtitleUrl, 2000);
 })();
