@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BiliTracker</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",Roboto,sans-serif;background:#f5efe6;color:#2c2018;height:100vh;display:flex;flex-direction:column;overflow:hidden;font-size:15px}
+
+/* ── 顶栏 ── */
+.header{padding:12px 24px;border-bottom:2px solid #e0c89a;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;background:#fffaf3}
+.header h1{font-size:18px;font-weight:700;color:#1e1408;letter-spacing:.3px}
+.hr{display:flex;gap:10px;align-items:center}
+.pill{background:#fdf4e3;padding:5px 12px;border-radius:7px;font-size:13px;border:1px solid #e0c89a;color:#6a5030}
+.pill b{color:#c07808;margin-right:2px}
+.pill.low{border-color:#d04040;color:#d04040;background:#fff0f0}
+
+/* ── Tab ── */
+.tabs{display:flex;border-bottom:2px solid #e0c89a;flex-shrink:0;padding:0 24px;background:#fffaf3}
+.tab{padding:10px 18px;font-size:14px;color:#9a8060;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .12s}
+.tab:hover{color:#6a4820}
+.tab.active{color:#c07808;border-color:#c07808;font-weight:600}
+
+/* ── 内容 ── */
+.content{flex:1;overflow:hidden;position:relative;background:#f5efe6}
+.pnl{display:none;position:absolute;inset:0;overflow-y:auto;padding:20px 24px}
+.pnl.active{display:block}
+
+/* ── 通用 ── */
+.ctrl{display:flex;gap:8px;margin-bottom:16px;align-items:center}
+.ctrl input,.ctrl select{padding:8px 12px;border-radius:7px;border:1px solid #d4b880;background:#fffaf3;color:#2c2018;font-size:14px;outline:none}
+.ctrl input:focus{border-color:#c07808;box-shadow:0 0 0 2px rgba(192,120,8,.12)}
+.ctrl input[type=text]{flex:1}
+.btn{padding:8px 16px;border-radius:7px;border:none;font-size:14px;cursor:pointer;font-weight:600;transition:opacity .15s,background .15s}
+.btn:disabled{opacity:.4;cursor:default}
+.btn-p{background:#c07808;color:#fff}
+.btn-p:hover:not(:disabled){background:#a86606}
+.btn-s{background:#e8dcc8;color:#4a3820;border:1px solid #d0b888}
+.btn-s:hover{background:#ddd0b4}
+
+/* ── 搜索范围 ── */
+.scope-row{display:flex;gap:12px;align-items:center;margin-bottom:8px;font-size:12px;color:#9a7858}
+.scope-row label{display:flex;align-items:center;gap:3px;cursor:pointer;color:#7a6040}
+.scope-row input[type=checkbox]{cursor:pointer}
+
+/* ── 推荐排除面板 ── */
+.rec-toggle-btn{font-size:13px;padding:6px 14px;border-radius:7px;border:1px solid #d4b880;background:#fdf4e3;color:#7a5830;cursor:pointer;transition:all .12s;white-space:nowrap}
+.rec-toggle-btn:hover{border-color:#c07808;color:#c07808}
+.rec-toggle-btn.active{border-color:#c07808;background:#fde8c0;color:#c07808;font-weight:600}
+.rec-panel{display:none;background:#fffaf3;border:1px solid #e0cca8;border-radius:8px;padding:14px 16px;margin-bottom:12px}
+.rec-panel.open{display:block}
+/* 档位按钮 */
+.rec-presets{display:flex;gap:6px;align-items:center;margin-bottom:10px}
+.rec-presets span{font-size:12px;color:#9a7858;margin-right:2px}
+.preset-btn{font-size:12px;padding:4px 13px;border-radius:5px;border:1px solid #d4b880;background:#fdf4e3;color:#7a5830;cursor:pointer;transition:all .12s}
+.preset-btn:hover{border-color:#c07808;color:#c07808}
+.preset-btn.active{border-color:#c07808;background:#f5e8cc;color:#c07808;font-weight:600}
+/* 自定义输入（仅自定义档位时展开） */
+.rec-custom{display:none;background:#faf5ec;border:1px solid #ede4d0;border-radius:6px;padding:10px 12px;margin-bottom:10px;flex-wrap:wrap;gap:14px;align-items:center}
+.rec-custom.open{display:flex}
+.rec-custom label{font-size:12px;color:#7a6040;display:flex;align-items:center;gap:4px}
+.rec-custom input[type=number]{width:58px;padding:3px 6px;border-radius:5px;border:1px solid #d4b880;background:#fffaf3;font-size:12px;outline:none}
+.rec-custom input[type=checkbox]{cursor:pointer}
+/* 档位说明提示 */
+.preset-hint{font-size:11px;color:#a08858;margin-bottom:10px;padding:5px 8px;background:#fdf6e4;border-radius:5px;border-left:3px solid #e0c878}
+/* 结果 */
+.rec-results{max-height:340px;overflow-y:auto;margin-top:4px}
+.rec-row{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0e8d8;font-size:12px}
+.rec-row:last-child{border-bottom:none}
+.rec-row input[type=checkbox]{cursor:pointer;flex-shrink:0}
+.rec-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#2c2018}
+.rec-up{width:80px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9a7858}
+.rec-date{width:100px;flex-shrink:0;color:#9a7858}
+.rec-tag{font-size:10px;padding:1px 5px;border-radius:3px;background:#fde8c0;color:#a06010;border:1px solid #e8c880;white-space:nowrap;flex-shrink:0}
+.rec-bar{display:flex;gap:8px;align-items:center;padding:8px 4px 0;border-top:1px solid #ede4d0;margin-top:6px}
+.rec-bar label{font-size:12px;color:#7a6040;display:flex;align-items:center;gap:4px;cursor:pointer}
+.rec-summary{font-size:12px;color:#9a7858}
+
+/* ── 视频列表 ── */
+.vi-wrap{border:1px solid #e0cca8;border-radius:8px;margin-bottom:6px;background:#fffaf3;transition:box-shadow .1s}
+.vi-wrap:hover{box-shadow:0 2px 8px rgba(160,100,0,.08)}
+.vi{display:flex;gap:12px;padding:12px;transition:background .1s;cursor:default}
+.vi:hover{background:#fdf6e8}
+.vi-i{flex:1;min-width:0}
+.vi-t{font-size:14px;font-weight:600;color:#1e1408;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vi-m{font-size:12px;color:#9a7858;display:flex;gap:8px;margin-top:3px}
+.vi-tg{display:flex;gap:3px;margin-top:4px;flex-wrap:wrap}
+.vi-tg span{font-size:11px;padding:1px 6px;border-radius:3px;background:#f0e4cc;color:#8a6840;border:1px solid #ddd0a8}
+.vi-r{display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0}
+.vi-r .w{font-size:12px;color:#c07808;font-weight:600}
+.vi-r .d{font-size:11px;color:#a08060}
+.vi-r .s{font-size:11px;color:#508040;font-weight:600}
+.vi-a{display:flex;gap:4px;margin-top:3px}
+.vi-a span{font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid #d4b880;color:#7a5830;cursor:pointer;background:#fdf4e3;transition:all .12s}
+.vi-a span:hover{border-color:#c07808;color:#c07808;background:#fff8ed}
+.vi-a span.excl-on{border-color:#c07808;background:#fde8c0;color:#c07808}
+.vi-a span.del-btn{border-color:#e0b0a0;color:#c05040}
+.vi-a span.del-btn:hover{border-color:#c05040;background:#fff0ee;color:#c05040}
+/* 已排除视频卡片 */
+.vi-wrap.is-excl{opacity:.5;filter:grayscale(.4)}
+.vi-wrap.is-excl:hover{opacity:.75}
+/* 原因标签 */
+.vi-signals{display:flex;gap:3px;margin-top:4px;flex-wrap:wrap}
+.vi-sig{font-size:10px;padding:1px 6px;border-radius:3px;background:#fff0dc;color:#a06010;border:1px solid #e8c880}
+/* 展开的观看记录 */
+.vi-records{display:none;border-top:1px solid #ede4d0;padding:8px 12px;background:#faf5ec}
+.vi-records.open{display:block}
+.vr-row{display:flex;align-items:center;gap:8px;padding:5px 4px;border-bottom:1px solid #f0e8d8;font-size:12px;color:#4a3820}
+.vr-row:last-child{border-bottom:none}
+.vr-row.excluded{opacity:.45;text-decoration:line-through}
+.vr-date{width:130px;flex-shrink:0;color:#9a7858}
+.vr-dur{width:55px;flex-shrink:0;color:#7a6040}
+.vr-prog{width:46px;flex-shrink:0;color:#a08060}
+.vr-tag{font-size:10px;padding:1px 5px;border-radius:3px;background:#f0e0c0;color:#a07030;border:1px solid #e0c898;flex-shrink:0}
+.vr-acts{margin-left:auto;display:flex;gap:5px}
+.vr-btn{font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid #d4b880;background:#fdf4e3;color:#7a5830;cursor:pointer;transition:all .12s;white-space:nowrap}
+.vr-btn:hover{border-color:#c07808;color:#c07808}
+.vr-btn.del{border-color:#e0b0a0;color:#c05040}
+.vr-btn.del:hover{border-color:#c05040;background:#fff0ee}
+.empty{text-align:center;padding:60px;color:#b09070;font-size:15px}
+.pgr{text-align:center;padding:12px}
+.pgr button{padding:6px 14px;border-radius:5px;border:1px solid #d4b880;background:#fdf4e3;color:#7a5830;cursor:pointer;margin:0 3px;font-size:13px;transition:background .12s}
+.pgr button:hover{background:#f5e8cc}
+.pgr button:disabled{opacity:.3}
+
+/* ── 总结 ── */
+.sr{margin-top:12px;padding:16px;border-radius:8px;background:#fffaf3;border:1px solid #e0cca8;font-size:15px;line-height:1.8;white-space:pre-wrap;max-height:65vh;overflow-y:auto;color:#2c2018}
+.pb-area{margin-top:12px;display:none}
+.pb-label{font-size:13px;color:#9a8060;margin-bottom:6px}
+.pb-bg{height:4px;background:#ede0c0;border-radius:2px;overflow:hidden}
+.pb-fill{height:100%;background:#c07808;border-radius:2px;width:0%;transition:width 0.4s ease}
+
+/* ── 对话 ── */
+.cht{display:flex;height:calc(100vh - 130px)}
+.cht-side{width:230px;border-right:1px solid #e0cca8;display:flex;flex-direction:column;flex-shrink:0;background:#fffaf3}
+.cht-side-h{padding:10px 12px;border-bottom:1px solid #e0cca8;display:flex;justify-content:space-between;align-items:center}
+.cht-side-h span{font-size:13px;color:#7a6048}
+.cht-list{flex:1;overflow-y:auto}
+.cht-item{padding:10px 12px;cursor:pointer;border-bottom:1px solid #ede4d0;transition:background .1s}
+.cht-item:hover{background:#fdf4e3}
+.cht-item.active{background:#fdf0d8;border-left:3px solid #c07808}
+.cht-item-t{font-size:13px;color:#2c2018;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cht-item-m{font-size:11px;color:#a08060;margin-top:2px}
+.cht-main{flex:1;display:flex;flex-direction:column;background:#f5efe6}
+.cht-ctrl{display:flex;gap:8px;padding:9px 16px;border-bottom:1px solid #e0cca8;align-items:center;background:#fffaf3}
+.cht-ctrl select,.cht-ctrl input{padding:5px 9px;border-radius:5px;border:1px solid #d4b880;background:#fdf4e3;color:#2c2018;font-size:13px;outline:none}
+.cht-ctrl label{font-size:13px;color:#7a6048;display:flex;align-items:center;gap:3px}
+.cht-msgs{flex:1;overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:8px}
+.cht-msgs::-webkit-scrollbar{width:4px}
+.cht-msgs::-webkit-scrollbar-thumb{background:#d4b880;border-radius:2px}
+.cm{padding:11px 14px;border-radius:10px;font-size:15px;line-height:1.8;max-width:82%;white-space:pre-wrap;word-break:break-word}
+.cm.u{background:#fde8c0;color:#2c1808;align-self:flex-end;border-bottom-right-radius:3px;border:1px solid #e8c880}
+.cm.b{background:#fffaf3;color:#3a2c18;align-self:flex-start;border:1px solid #e0cca8;border-bottom-left-radius:3px}
+.cm.ld{color:#b09070;font-style:italic}
+.cm.b.streaming::after{content:'▋';animation:cur-blink .9s step-end infinite;color:#c07808;margin-left:1px}
+@keyframes cur-blink{0%,100%{opacity:1}50%{opacity:0}}
+.cht-in{display:flex;gap:8px;padding:10px 16px 12px;border-top:1px solid #e0cca8;background:#fffaf3}
+.cht-in textarea{flex:1;padding:9px 12px;border-radius:7px;border:1px solid #d4b880;background:#fdf4e3;color:#2c2018;font-size:15px;outline:none;resize:none;height:44px;font-family:inherit;transition:border-color .15s}
+.cht-in textarea:focus{border-color:#c07808}
+.cht-in textarea:disabled,.cht-in button:disabled{opacity:.4;cursor:default}
+
+/* 思考过程块 */
+.thinking-wrap{border-left:3px solid #e0c890;padding:4px 0 4px 10px;margin-bottom:7px}
+.thinking-hdr{font-size:12px;color:#a08858;cursor:pointer;user-select:none;display:flex;align-items:center}
+.thinking-hdr:hover{color:#806838}
+.thinking-body{font-size:13px;color:#b09878;font-style:italic;line-height:1.6;margin-top:4px;max-height:130px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.thinking-body.hidden{display:none}
+
+/* ── 统计 ── */
+.sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:22px}
+.sc{background:#fffaf3;padding:18px;border-radius:10px;border:1px solid #e0cca8;text-align:center;box-shadow:0 1px 4px rgba(160,100,0,.07)}
+.sc .n{font-size:26px;font-weight:700;color:#c07808}
+.sc .l{font-size:12px;color:#9a8060;margin-top:4px}
+.ss{margin-bottom:22px}
+.ss h3{font-size:15px;color:#7a6048;margin-bottom:10px;font-weight:600}
+.sb{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.sb-n{width:100px;font-size:13px;color:#4a3820;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-f{height:16px;border-radius:3px;transition:width .3s}
+.sb-c{font-size:12px;color:#9a8060;width:38px}
+.hbar{display:flex;gap:2px;align-items:flex-end;height:90px;margin-top:6px}
+.hbar-col{flex:1;background:#e8c878;border-radius:2px 2px 0 0;min-width:4px;position:relative}
+.hbar-col:hover::after{content:attr(data-tip);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#3a2810;color:#f5e8cc;padding:3px 8px;border-radius:4px;font-size:11px;white-space:nowrap}
+
+/* ── 数据库 ── */
+.dbtbl{width:100%;border-collapse:collapse;font-size:13px}
+.dbtbl th{text-align:left;padding:8px 10px;border-bottom:2px solid #e0cca8;color:#7a6048;position:sticky;top:0;background:#f5efe6;font-weight:600}
+.dbtbl td{padding:7px 10px;border-bottom:1px solid #ede4d0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#3a2c18}
+.dbtbl tr:hover td{background:#fdf6e8}
+.dbtbl td.expandable{cursor:pointer;color:#c07808;text-decoration:underline dotted}
+.dbtbl td.expandable:hover{color:#a06006}
+
+/* ── 全文模态框 ── */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(60,30,0,.55);z-index:9999;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:#fffaf3;border:1px solid #e0cca8;border-radius:12px;max-width:760px;width:90%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(100,60,0,.18)}
+.modal-hdr{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #e0cca8;flex-shrink:0}
+.modal-hdr span{font-size:15px;color:#2c2018;font-weight:600}
+.modal-hdr button{background:transparent;border:none;color:#a08060;cursor:pointer;font-size:18px;line-height:1}
+.modal-hdr button:hover{color:#2c2018}
+.modal-body{flex:1;overflow-y:auto;padding:16px 18px;font-size:15px;line-height:1.8;color:#3a2c18;white-space:pre-wrap;word-break:break-word}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>BiliTracker</h1>
+  <div class="hr">
+    <div class="pill" id="h-s">加载中...</div>
+    <div class="pill" id="h-b">余额: --</div>
+  </div>
+</div>
+<div class="tabs">
+  <div class="tab active" data-t="videos">视频</div>
+  <div class="tab" data-t="chat">对话</div>
+  <div class="tab" data-t="stats">指标</div>
+  <div class="tab" data-t="db">数据库</div>
+  <div class="tab" data-t="cfg">设置</div>
+</div>
+<div class="content">
+  <!-- 视频 -->
+  <div class="pnl active" id="p-videos">
+    <div class="ctrl">
+      <input type="text" id="q" placeholder="搜索标题、UP主、标签...">
+      <button class="rec-toggle-btn" id="rec-toggle-btn" onclick="toggleRecPanel()">推荐排除</button>
+    </div>
+    <div class="scope-row">
+      <span>搜索范围:</span>
+      <label><input type="checkbox" id="sc-title" checked> 标题</label>
+      <label><input type="checkbox" id="sc-up" checked> UP主</label>
+      <label><input type="checkbox" id="sc-tags" checked> 标签</label>
+      <label><input type="checkbox" id="sc-desc"> 简介</label>
+      <label><input type="checkbox" id="sc-summary"> 总结</label>
+      <label><input type="checkbox" id="sc-sub"> 字幕</label>
+    </div>
+    <div class="rec-panel" id="rec-panel">
+      <div class="rec-presets">
+        <span>推荐力度:</span>
+        <button class="preset-btn" data-preset="strict" onclick="applyPreset('strict')">从严</button>
+        <button class="preset-btn active" data-preset="moderate" onclick="applyPreset('moderate')">适度</button>
+        <button class="preset-btn" data-preset="lenient" onclick="applyPreset('lenient')">从宽</button>
+        <button class="preset-btn" data-preset="custom" onclick="applyPreset('custom')">自定义</button>
+        <button class="btn btn-p" id="rc-scan" onclick="scanRec()" style="padding:4px 14px;font-size:12px;margin-left:8px">扫描</button>
+      </div>
+      <div class="preset-hint" id="preset-hint"></div>
+      <div class="rec-custom" id="rec-custom">
+        <span style="font-size:11px;color:#9a7858;width:100%;margin-bottom:2px">满足以下任一条件即推荐排除：</span>
+        <label>时长 &lt; <input type="number" id="rc-sec" value="60" min="0" max="3600">秒（含误点击）</label>
+        <label>进度 &lt; <input type="number" id="rc-prog" value="10" min="0" max="100">%</label>
+        <label><input type="checkbox" id="rc-auto" checked> 标记自动播放记录</label>
+        <label><input type="checkbox" id="rc-noact" checked> 标记无总结且无对话的视频</label>
+      </div>
+      <div id="rec-results"></div>
+    </div>
+    <div id="vl"></div><div class="pgr" id="pg"></div>
+  </div>
+  <!-- 对话 -->
+  <div class="pnl" id="p-chat" style="padding:0">
+    <div class="cht">
+      <div class="cht-side">
+        <div class="cht-side-h"><span>对话历史</span><button class="btn btn-s" style="padding:3px 8px;font-size:10px" onclick="newChat()">新建</button></div>
+        <div class="cht-list" id="cl"></div>
+      </div>
+      <div class="cht-main">
+        <div class="cht-ctrl">
+          <select id="cm"><option value="deepseek-chat">V3.2</option><option value="deepseek-reasoner">R1</option></select>
+          <input type="text" id="cbv" placeholder="绑定BV号" style="width:130px">
+          <label><input type="checkbox" id="cs" checked> 含数据</label>
+          <label><input type="checkbox" id="cws"> 联网</label>
+        </div>
+        <div class="cht-msgs" id="cms"></div>
+        <div class="cht-in">
+          <textarea id="ci" placeholder="输入问题... Enter发送"></textarea>
+          <button class="btn btn-p" onclick="sendMsg()">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- 指标 -->
+  <div class="pnl" id="p-stats"><div id="st">加载中...</div></div>
+  <!-- 数据库 -->
+  <div class="pnl" id="p-db">
+    <div class="ctrl">
+      <select id="dbt" onchange="loadTable()">
+        <option value="videos">videos</option>
+        <option value="watch_records">watch_records</option>
+        <option value="subtitles">subtitles</option>
+        <option value="chat_sessions">chat_sessions</option>
+        <option value="chat_messages">chat_messages</option>
+      </select>
+      <span id="dbc" style="font-size:13px;color:#9a8060"></span>
+    </div>
+    <div style="overflow:auto;max-height:calc(100vh - 200px)" id="dbv"></div>
+  </div>
+  <!-- 设置 -->
+  <div class="pnl" id="p-cfg">
+    <div style="max-width:860px;display:flex;flex-direction:column;gap:16px;padding-top:4px">
+
+      <!-- 1. 当前配置状态 -->
+      <div id="cfg-status" style="background:#fdf6eb;border:1px solid #e0cca8;border-radius:7px;padding:10px 14px;font-size:13px;color:#5a4020;line-height:1.9">
+        <div style="font-weight:600;color:#c07808;margin-bottom:4px">当前配置状态</div>
+        <div id="cfg-status-body" style="color:#9a7858">加载中...</div>
+      </div>
+
+      <!-- 2. 转写设置 -->
+      <div style="font-size:13px;font-weight:700;color:#c07808;text-transform:uppercase;letter-spacing:.5px">转写设置</div>
+      <label style="display:flex;align-items:center;gap:12px;font-size:14px;color:#3a2c18;cursor:pointer">
+        <span style="flex:1">自动转写（新视频无字幕时自动入队转写）</span>
+        <input type="checkbox" id="cfg-auto-asr" checked onchange="saveSetting('auto_asr', this.checked)" style="width:16px;height:16px;cursor:pointer">
+      </label>
+      <label style="display:flex;align-items:center;gap:12px;font-size:14px;color:#3a2c18">
+        <span style="flex:1">默认 Whisper 模型</span>
+        <select id="cfg-whisper" onchange="saveSetting('whisper_model', this.value)" style="padding:4px 10px;border-radius:5px;border:1px solid #d4b880;background:#fffaf3;color:#4a3820;font-size:13px;outline:none">
+          <option value="large-v3-turbo">large-v3-turbo（推荐）</option>
+          <option value="large-v3">large-v3</option>
+          <option value="small">small</option>
+        </select>
+      </label>
+      <div style="font-size:12px;color:#a08060;margin-top:-8px">Sidebar 的 Whisper 选择仅对当前会话有效；此处设置为默认值</div>
+
+      <!-- 3. API 配置 -->
+      <div style="font-size:13px;font-weight:700;color:#c07808;text-transform:uppercase;letter-spacing:.5px;margin-top:4px">API 配置</div>
+      <label style="display:flex;align-items:center;gap:12px;font-size:14px;color:#3a2c18">
+        <span style="white-space:nowrap">服务商</span>
+        <select id="cfg-provider" onchange="onProviderChange(this.value)"
+          style="padding:4px 10px;border-radius:5px;border:1px solid #d4b880;background:#fffaf3;color:#4a3820;font-size:13px;outline:none">
+          <option value="deepseek">DeepSeek</option>
+          <option value="qwen">通义千问</option>
+          <option value="doubao">豆包</option>
+          <option value="moonshot">Moonshot</option>
+          <option value="zhipu">智谱</option>
+          <option value="openai">OpenAI</option>
+          <option value="google">Google</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="custom">自定义</option>
+        </select>
+        <span style="font-size:12px;color:#a08060;flex:1">（切换服务商加载对应 Key）</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:12px;font-size:14px;color:#3a2c18">
+        <span style="white-space:nowrap">模型</span>
+        <select id="cfg-model-sel"
+          style="flex:1;padding:4px 10px;border-radius:5px;border:1px solid #d4b880;background:#fffaf3;color:#4a3820;font-size:13px;outline:none">
+        </select>
+      </label>
+      <label style="display:flex;align-items:center;gap:12px;font-size:14px;color:#3a2c18">
+        <span style="white-space:nowrap">API Key</span>
+        <input type="password" id="cfg-apikey" placeholder="sk-..."
+          style="flex:1;padding:4px 10px;border-radius:5px;border:1px solid #d4b880;background:#fffaf3;color:#4a3820;font-size:13px;outline:none;font-family:monospace">
+      </label>
+      <label style="display:flex;align-items:center;gap:12px;font-size:14px;color:#3a2c18">
+        <span style="white-space:nowrap">Base URL</span>
+        <input type="text" id="cfg-apibase" placeholder="https://api.deepseek.com/v1"
+          style="flex:1;padding:4px 10px;border-radius:5px;border:1px solid #d4b880;background:#fffaf3;color:#4a3820;font-size:13px;outline:none">
+      </label>
+      <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">
+        <div style="font-size:12px;color:#a08060;flex:1">Key 独立存储，不同服务商互不影响</div>
+        <div style="display:flex;gap:6px;align-items:center;font-size:13px;color:#7a5830;border:1px solid #d4b880;border-radius:6px;padding:4px 10px;background:#fdf4e3">
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;font-weight:600">
+            <input type="radio" name="cur-mode" value="cny" checked style="cursor:pointer"> ¥ CNY
+          </label>
+          <span style="color:#d4b880">|</span>
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer">
+            <input type="radio" name="cur-mode" value="usd" style="cursor:pointer"> $ USD
+          </label>
+          <input type="number" id="fx-manual-input" step="0.01" min="1" max="30" placeholder="汇率"
+            style="width:60px;padding:2px 6px;border-radius:4px;border:1px solid #d4b880;background:#fffaf3;color:#4a3820;font-size:12px;outline:none"
+            title="1 USD = ? CNY，用于$价格换算，可手动修改">
+          <span id="fx-status-label" style="font-size:11px;color:#a08060;white-space:nowrap"></span>
+          <button onclick="fetchExchangeRate()" id="fx-fetch-btn"
+            style="padding:4px 10px;border-radius:5px;border:1px solid #d4b880;background:#fdf4e3;color:#c07808;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .15s"
+            onmouseenter="this.style.background='#f5e8cc'" onmouseleave="this.style.background='#fdf4e3'">获取汇率</button>
+        </div>
+        <button onclick="fetchArenaELO()" id="cfg-elo-btn"
+          style="padding:6px 14px;border-radius:6px;border:1px solid #d4b880;background:#fdf4e3;color:#c07808;font-size:13px;cursor:pointer;white-space:nowrap">获取性能分</button>
+        <button onclick="fetchProviderModels()" id="cfg-fetch-btn"
+          style="padding:6px 14px;border-radius:6px;border:1px solid #d4b880;background:#fdf4e3;color:#c07808;font-size:13px;cursor:pointer;white-space:nowrap">获取模型价格</button>
+        <button onclick="saveAICfg()" id="cfg-save-btn"
+          style="padding:6px 20px;border-radius:6px;border:none;background:#c07808;color:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">保存配置</button>
+      </div>
+      <div id="cfg-save-msg" style="font-size:12px;color:#3a8040;display:none;text-align:right">✓ 已保存</div>
+
+      <!-- 4. 全部模型表格 -->
+      <div style="display:flex;align-items:baseline;gap:12px;margin-top:4px">
+        <div style="font-size:13px;font-weight:700;color:#c07808;text-transform:uppercase;letter-spacing:.5px">全部模型</div>
+        <div style="font-size:12px;color:#a08060">点击表头排序 · 点击行选用 · 价格单位：每百万 tokens，参考值</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table id="cfg-model-table" style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#fdf0d8;color:#7a5020;text-align:left">
+              <th id="th-prov"   onclick="sortModelTable('prov')"   style="padding:7px 10px;border:1px solid #e0cca8;cursor:pointer;white-space:nowrap">厂商 <span class="th-arrow"></span></th>
+              <th id="th-label"  onclick="sortModelTable('label')"  style="padding:7px 10px;border:1px solid #e0cca8;cursor:pointer;white-space:nowrap">模型 <span class="th-arrow"></span></th>
+              <th id="th-perf"   onclick="sortModelTable('perf')"   style="padding:7px 10px;border:1px solid #e0cca8;cursor:pointer;white-space:nowrap;text-align:center" title="LM Arena ELO 实测分映射为 1-10，点击获取性能分按钮后显示；小字为原始 ELO 分">性能<br><span style="font-size:10px;color:#b09878;font-weight:400">ELO</span> <span class="th-arrow"></span></th>
+              <th id="th-input"  onclick="sortModelTable('input')"  style="padding:7px 10px;border:1px solid #e0cca8;cursor:pointer;white-space:nowrap;text-align:right">输入/M <span class="th-arrow"></span></th>
+              <th id="th-output" onclick="sortModelTable('output')" style="padding:7px 10px;border:1px solid #e0cca8;cursor:pointer;white-space:nowrap;text-align:right">输出/M <span class="th-arrow"></span></th>
+              <th id="th-total"  onclick="sortModelTable('total')"  style="padding:7px 10px;border:1px solid #e0cca8;cursor:pointer;white-space:nowrap;text-align:right" title="输入+输出折算人民币，用于性价比计算">折算¥/M <span class="th-arrow"></span></th>
+              <th id="th-value"  onclick="sortModelTable('value')"  style="padding:7px 10px;border:1px solid #e0cca8;cursor:pointer;white-space:nowrap;text-align:right">性价比 <span class="th-arrow"></span></th>
+              <th style="padding:7px 10px;border:1px solid #e0cca8;text-align:center">使用</th>
+            </tr>
+          </thead>
+          <tbody id="cfg-model-tbody"></tbody>
+        </table>
+      </div>
+      <div id="arena-footnote" style="font-size:11px;color:#b09070;margin-top:-8px">性能分来自 <a href="https://lmarena.ai/leaderboard" target="_blank" style="color:#c07808;text-decoration:none">LM Arena ELO 实测</a>，公式：<code style="background:#f0e8d8;padding:0 3px;border-radius:2px">1-10 = round((ELO − min) / (max − min) × 9) + 1</code>，<span id="arena-range-hint">内置数据范围：1083–1499（前300名，2026-04-19）</span>；折算¥ = 输入+输出转为人民币合计；性价比 = 性能分 / 折算¥ × 10，越高越好；价格以各官网为准</div>
+
+    </div>
+  </div>
+</div>
+
+<!-- 总结模态框 -->
+<div class="modal-bg" id="summ-modal-bg" onclick="if(event.target===this)closeSummModal()">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-hdr">
+      <span id="summ-modal-title" style="max-width:460px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px"></span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="summ-m" style="padding:3px 7px;border-radius:4px;border:1px solid #d4b880;background:#fffaf3;color:#4a3820;font-size:12px;outline:none"><option value="deepseek-chat">V3 Chat</option><option value="deepseek-reasoner">R1 Reasoner</option></select>
+        <select id="summ-wm" style="padding:3px 7px;border-radius:4px;border:1px solid #d4b880;background:#fffaf3;color:#4a3820;font-size:12px;outline:none"><option value="large-v3-turbo">turbo</option><option value="large-v3">large-v3</option><option value="small">small</option></select>
+        <button id="summ-go-btn" onclick="genSumm()" style="padding:3px 12px;border-radius:4px;border:1px solid #d4b880;background:#fdf4e3;color:#c07808;cursor:pointer;font-size:12px">生成总结</button>
+        <button onclick="closeSummModal()" style="background:transparent;border:none;color:#a08060;cursor:pointer;font-size:18px;line-height:1">✕</button>
+      </div>
+    </div>
+    <div class="pb-area" id="summ-pb" style="padding:0 18px 8px"><div class="pb-label" id="summ-pb-lbl"></div><div class="pb-bg"><div class="pb-fill" id="summ-pb-fill"></div></div></div>
+    <div class="modal-body" id="summ-modal-body"></div>
+  </div>
+</div>
+
+<!-- 全文查看模态框 -->
+<div class="modal-bg" id="modal-bg" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-hdr"><span id="modal-title">全文</span><button onclick="closeModal()">✕</button></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+const A='';
+let pg=0,lm=100,kw='',sid=null;
+
+// 搜索范围复选框
+['sc-title','sc-up','sc-tags','sc-desc','sc-summary','sc-sub'].forEach(id=>
+  document.getElementById(id).addEventListener('change',()=>{pg=0;loadV()})
+);
+
+// Tab
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.pnl').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');document.getElementById('p-'+t.dataset.t).classList.add('active');
+  if(t.dataset.t==='stats')loadStats();if(t.dataset.t==='chat')loadSessions();if(t.dataset.t==='db')loadTable();if(t.dataset.t==='cfg')loadCfg();
+}));
+
+// 顶栏
+async function loadHdr(){
+  try{
+    const[s,b,h]=await Promise.all([fetch(A+'/api/stats').then(r=>r.json()),fetch(A+'/api/balance').then(r=>r.json()),fetch(A+'/api/health').then(r=>r.json())]);
+    document.getElementById('h-s').innerHTML=`<b>${s.total_unique_videos}</b>视频 · <b>${s.total_watches}</b>次 · <b>${s.total_duration_hours}h</b> · v${h.version||'?'}`;
+    const e=document.getElementById('h-b');
+    if(b.total_balance!==null){e.textContent='余额: ¥'+b.total_balance;e.classList.toggle('low',parseFloat(b.total_balance)<1)}
+    else e.textContent='余额: 未配置';
+  }catch{}
+}
+
+// 视频
+async function loadV(){
+  const p=new URLSearchParams({limit:lm,offset:pg*lm});
+  if(kw)p.set('keyword',kw);
+  if(!document.getElementById('sc-title').checked)p.set('search_title','false');
+  if(!document.getElementById('sc-up').checked)p.set('search_up','false');
+  if(!document.getElementById('sc-tags').checked)p.set('search_tags','false');
+  if(document.getElementById('sc-desc').checked)p.set('search_desc','true');
+  if(document.getElementById('sc-summary').checked)p.set('search_summary','true');
+  if(document.getElementById('sc-sub').checked)p.set('search_subtitle','true');
+  const d=await fetch(A+'/api/videos?'+p).then(r=>r.json());
+  const el=document.getElementById('vl');
+  if(!d.videos.length){el.innerHTML='<div class="empty">还没有记录</div>';document.getElementById('pg').innerHTML='';return}
+  el.innerHTML=d.videos.map(v=>{
+    const tg=(()=>{try{return JSON.parse(v.tags||'[]')}catch{return[]}})();
+    const du=v.duration?Math.floor(v.duration/60)+':'+String(v.duration%60).padStart(2,'0'):'';
+    const bv=v.bv_id;
+    const isExcl=v.excluded===1;
+    const sigs=getExcludeSignals(v);
+    const sigHtml=sigs.length?`<div class="vi-signals">${sigs.map(s=>`<span class="vi-sig">${s}</span>`).join('')}</div>`:'';
+    const imgHtml=''
+    return`<div class="vi-wrap${isExcl?' is-excl':''}" id="wrap-${bv}"><div class="vi">${imgHtml}<div class="vi-i"><div class="vi-t" title="${esc(v.title)}">${esc(v.title)}</div><div class="vi-m"><span>${esc(v.up_name||'')}</span><span>${du}</span><span>${esc(v.zone_primary||'')}</span><span>▶${(v.view_count||0).toLocaleString()}</span></div><div class="vi-tg">${tg.slice(0,4).map(t=>'<span>'+esc(t)+'</span>').join('')}</div>${sigHtml}</div><div class="vi-r"><div class="d">${(v.last_watched||'').slice(0,10)}</div>${v.summary?'<div class="s">已总结</div>':''}<div class="vi-a"><span onclick="goSumm('${bv}')">总结</span><span onclick="goChat('${bv}')">对话</span><span class="${isExcl?'excl-on':''}" onclick="toggleExcludeVideo('${bv}',${isExcl})">${isExcl?'恢复':'排除'}</span><span class="del-btn" onclick="deleteVideoCompletely('${bv}')">删除</span><span onclick="toggleRecords('${bv}')">明细</span></div></div></div><div class="vi-records" id="rec-${bv}"></div></div>`
+  }).join('');
+  const tp=Math.ceil(d.total/lm);
+  document.getElementById('pg').innerHTML=`<button onclick="pg=Math.max(0,pg-1);loadV()" ${pg===0?'disabled':''}>上一页</button><span style="color:#666;font-size:11px">${pg+1}/${tp} 共${d.total}条</span><button onclick="pg++;loadV()" ${pg>=tp-1?'disabled':''}>下一页</button>`;
+}
+let _summBv=null;
+async function goSumm(bv){
+  _summBv=bv;
+  const bg=document.getElementById('summ-modal-bg');
+  const body=document.getElementById('summ-modal-body');
+  const goBtn=document.getElementById('summ-go-btn');
+  body.style.color='#9a7858';body.textContent='加载中...';
+  bg.classList.add('open');
+  _summPbReset();
+  try{
+    const v=await fetch(A+'/api/video/'+bv).then(r=>r.json());
+    document.getElementById('summ-modal-title').textContent=v.title||bv;
+    if(v.summary){
+      body.style.color='';body.textContent=v.summary;
+      goBtn.textContent='重新总结';
+    }else{
+      body.textContent='暂无总结，点击右上角"生成总结"开始';
+      goBtn.textContent='生成总结';
+    }
+  }catch{body.textContent='';goBtn.textContent='生成总结';}
+}
+function closeSummModal(){document.getElementById('summ-modal-bg').classList.remove('open');}
+let _summPbT=null,_summPbV=0;
+function _summPbShow(text){
+  const pb=document.getElementById('summ-pb');pb.style.display='block';
+  document.getElementById('summ-pb-lbl').textContent=text;
+  if(_summPbT)clearInterval(_summPbT);
+  const k=1-Math.exp(-300/(_spbSpeed(text)/3));
+  _summPbT=setInterval(()=>{_summPbV+=(90-_summPbV)*k;document.getElementById('summ-pb-fill').style.width=_summPbV.toFixed(1)+'%';},300);
+}
+function _summPbDone(){
+  if(_summPbT){clearInterval(_summPbT);_summPbT=null;}
+  document.getElementById('summ-pb-fill').style.width='100%';
+  setTimeout(()=>{document.getElementById('summ-pb').style.display='none';document.getElementById('summ-pb-fill').style.width='0%';_summPbV=0;},500);
+}
+function _summPbReset(){
+  if(_summPbT){clearInterval(_summPbT);_summPbT=null;}
+  _summPbV=0;document.getElementById('summ-pb').style.display='none';document.getElementById('summ-pb-fill').style.width='0%';
+}
+async function genSumm(){
+  if(!_summBv)return;
+  const goBtn=document.getElementById('summ-go-btn');
+  const body=document.getElementById('summ-modal-body');
+  const isRedo=goBtn.textContent==='重新总结';
+  goBtn.disabled=true;goBtn.textContent='...';
+  body.style.color='';body.textContent='';_summPbReset();
+  let started=false;
+  try{
+    const r=await fetch(A+'/api/summarize',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({bv_id:_summBv,model:document.getElementById('summ-m').value,whisper_model:document.getElementById('summ-wm').value,force:isRedo})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));body.style.color='#f55050';body.textContent='错误: '+(e.detail||r.status);return;}
+    const rd=r.body.getReader(),dc=new TextDecoder();let buf='';
+    while(true){
+      const{done,value}=await rd.read();if(done)break;
+      buf+=dc.decode(value,{stream:true});const ls=buf.split('\n');buf=ls.pop();
+      for(const l of ls){
+        if(!l.startsWith('data: '))continue;
+        try{const d=JSON.parse(l.slice(6));
+          if(d.error){_summPbDone();body.style.color='#f55050';body.textContent='错误: '+d.error;break;}
+          if(d.progress){body.style.color='#9a7858';body.textContent=d.progress;_summPbShow(d.progress);}
+          if(d.delta){if(!started){body.textContent='';body.style.color='';started=true;}body.textContent+=d.delta;}
+          if(d.done){_summPbDone();goBtn.textContent='重新总结';loadHdr();}
+        }catch{}
+      }
+    }
+  }catch(e){_summPbDone();body.style.color='#f55050';body.textContent='失败: '+e.message;}
+  finally{goBtn.disabled=false;}
+}
+function goChat(b){document.getElementById('cbv').value=b;document.querySelector('[data-t="chat"]').click();newChat()}
+
+// 计算该视频的推荐排除原因标签（基于累计时长）
+function getExcludeSignals(v){
+  const s=[];
+  if(v.has_autoplay)s.push('自动播放');
+  const td=v.total_duration;
+  if(td!=null&&td<60)s.push(`累计${td}秒`);
+  if(v.max_progress!=null&&v.max_progress<0.05)s.push(`进度${Math.round(v.max_progress*100)}%`);
+  if(!v.summary&&!v.chat_count)s.push('无总结/对话');
+  return s;
+}
+async function toggleExcludeVideo(bv,isExcl){
+  await fetch(A+'/api/video/'+bv+'/'+(isExcl?'include':'exclude'),{method:'POST'});
+  loadV();loadHdr();
+}
+async function deleteVideoCompletely(bv){
+  if(!confirm('确认完整删除该视频的全部数据？\n（观看记录、字幕、对话、总结均会删除，不可恢复）'))return;
+  await fetch(A+'/api/video/'+bv,{method:'DELETE'});
+  loadV();loadHdr();
+}
+
+// 推荐排除面板
+const REC_PRESETS={
+  strict:  {sec:15,  auto:false, prog:3,  noact:false, hint:'从严：仅标记极短（<15秒）或进度<3%的记录，纯硬指标，结果最少'},
+  moderate:{sec:60,  auto:false, prog:10, noact:false, hint:'适度：时长<60秒或进度<10%，仍只看硬指标，不含自动播放/活跃度'},
+  lenient: {sec:120, auto:true,  prog:20, noact:true,  hint:'从宽：时长<2分钟、进度<20%、自动播放、无总结/对话，满足任一即推荐'},
+  custom:  {sec:60,  auto:false, prog:10, noact:false, hint:'自定义：手动设置阈值，满足任一条件即推荐排除'},
+};
+let _recPreset='moderate';
+
+function applyPreset(level){
+  _recPreset=level;
+  document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active',b.dataset.preset===level));
+  const pr=REC_PRESETS[level];
+  document.getElementById('preset-hint').textContent=pr.hint;
+  // 自定义模式展开输入框
+  document.getElementById('rec-custom').classList.toggle('open',level==='custom');
+  if(level!=='custom'){
+    document.getElementById('rc-sec').value=pr.sec;
+    document.getElementById('rc-auto').checked=pr.auto;
+    document.getElementById('rc-prog').value=pr.prog;
+    document.getElementById('rc-noact').checked=pr.noact;
+    scanRec();
+  }
+}
+function toggleRecPanel(){
+  const p=document.getElementById('rec-panel');
+  const b=document.getElementById('rec-toggle-btn');
+  const open=p.classList.toggle('open');
+  b.classList.toggle('active',open);
+  if(open&&!document.getElementById('rec-results').innerHTML){
+    applyPreset('moderate');
+  }
+}
+async function scanRec(){
+  const btn=document.getElementById('rc-scan');
+  btn.disabled=true;btn.textContent='扫描中...';
+  const el=document.getElementById('rec-results');
+  el.innerHTML='<div style="padding:8px;color:#a08060;font-size:12px">扫描中...</div>';
+  try{
+    const pr=_recPreset==='custom'?null:REC_PRESETS[_recPreset];
+    const maxSec=pr?pr.sec:(document.getElementById('rc-sec').value||60);
+    const autoplay=(pr?pr.auto:document.getElementById('rc-auto').checked)?'true':'false';
+    const noact=(pr?pr.noact:document.getElementById('rc-noact').checked)?'true':'false';
+    const prog=(pr?pr.prog:(document.getElementById('rc-prog').value||10))/100;
+    const d=await fetch(A+`/api/recommend_exclude?max_sec=${maxSec}&autoplay=${autoplay}&no_activity=${noact}&max_progress=${prog}`).then(r=>r.json());
+    renderRec(d.records);
+  }catch(e){el.innerHTML='<div style="color:#f55050;font-size:12px;padding:8px">扫描失败: '+e.message+'</div>';}
+  btn.disabled=false;btn.textContent='扫描';
+}
+function renderRec(records){
+  const el=document.getElementById('rec-results');
+  if(!records.length){el.innerHTML='<div style="padding:8px;color:#7a8060;font-size:12px">没有符合条件的视频 ✓</div>';return}
+  el.innerHTML=`
+    <div class="rec-results">
+      ${records.map(r=>`<div class="rec-row">
+        <input type="checkbox" class="rec-cb" data-bv="${r.bv_id}">
+        <span class="rec-title" title="${esc(r.title)}">${esc(r.title)}</span>
+        <span class="rec-up" title="${esc(r.up_name||'')}">${esc(r.up_name||'')}</span>
+        <span class="rec-date">${(r.last_watched||'').slice(0,10)}</span>
+        ${r.reasons.map(t=>`<span class="rec-tag">${t}</span>`).join('')}
+      </div>`).join('')}
+    </div>
+    <div class="rec-bar">
+      <label><input type="checkbox" id="rc-all" onchange="toggleAllRec(this.checked)"> 全选</label>
+      <span class="rec-summary" id="rc-sel-count">已选 0 / ${records.length} 个</span>
+      <button class="btn btn-s" style="padding:4px 12px;font-size:12px" onclick="bulkRec('exclude')">批量排除</button>
+      <button class="btn" style="padding:4px 12px;font-size:12px;background:#fff0ee;color:#c05040;border:1px solid #e0b0a0" onclick="bulkRec('delete')">批量删除</button>
+    </div>`;
+  el.querySelectorAll('.rec-cb').forEach(cb=>cb.addEventListener('change',updateRecSelCount));
+}
+function toggleAllRec(checked){
+  document.querySelectorAll('.rec-cb').forEach(cb=>cb.checked=checked);
+  updateRecSelCount();
+}
+function updateRecSelCount(){
+  const sel=document.querySelectorAll('.rec-cb:checked').length;
+  const all=document.querySelectorAll('.rec-cb').length;
+  const cnt=document.getElementById('rc-sel-count');
+  if(cnt)cnt.textContent=`已选 ${sel} / ${all} 个`;
+}
+async function bulkRec(action){
+  const bv_ids=[...document.querySelectorAll('.rec-cb:checked')].map(cb=>cb.dataset.bv);
+  if(!bv_ids.length){alert('请先勾选视频');return}
+  if(action==='delete'&&!confirm(`确认完整删除选中的 ${bv_ids.length} 个视频的全部数据？`))return;
+  await fetch(A+'/api/videos/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bv_ids,action})});
+  loadV();loadHdr();scanRec();
+}
+
+// 观看记录展开
+async function toggleRecords(bv){
+  const el=document.getElementById('rec-'+bv);
+  if(el.classList.contains('open')){el.classList.remove('open');return}
+  el.classList.add('open');
+  el.innerHTML='<div style="padding:8px;color:#a08060;font-size:12px">加载中...</div>';
+  try{
+    const d=await fetch(A+'/api/watch_records/'+bv).then(r=>r.json());
+    renderRecords(bv,d.records);
+  }catch(e){el.innerHTML='<div style="color:#f55050;padding:8px;font-size:12px">加载失败: '+e.message+'</div>';}
+}
+function renderRecords(bv,records){
+  const el=document.getElementById('rec-'+bv);
+  if(!records.length){el.innerHTML='<div style="padding:8px;color:#a08060;font-size:12px">暂无记录</div>';return}
+  el.innerHTML=records.map(r=>{
+    const ex=r.excluded===1;
+    const prog=r.play_progress!=null?Math.round(r.play_progress*100)+'%':'';
+    const dur=r.duration_sec?Math.floor(r.duration_sec/60)+'m':'';
+    const tags=[];
+    if(r.is_autoplay)tags.push('自动播放');
+    if(r.completed)tags.push('看完');
+    return`<div class="vr-row${ex?' excluded':''}" id="vr-${r.id}">
+      <span class="vr-date">${(r.opened_at||'').slice(0,16)}</span>
+      <span class="vr-dur">${dur}</span>
+      <span class="vr-prog">${prog}</span>
+      ${tags.map(t=>`<span class="vr-tag">${t}</span>`).join('')}
+      <div class="vr-acts">
+        <button class="vr-btn" onclick="toggleExclude(${r.id},'${bv}',${ex})">${ex?'恢复':'排除'}</button>
+        <button class="vr-btn del" onclick="delRecord(${r.id},'${bv}')">删除</button>
+      </div>
+    </div>`
+  }).join('');
+}
+async function toggleExclude(id,bv,isExcluded){
+  const action=isExcluded?'include':'exclude';
+  await fetch(A+'/api/watch_record/'+id+'/'+action,{method:'POST'});
+  const d=await fetch(A+'/api/watch_records/'+bv).then(r=>r.json());
+  renderRecords(bv,d.records);
+  loadHdr();
+}
+async function delRecord(id,bv){
+  if(!confirm('确认删除这条观看记录？'))return;
+  await fetch(A+'/api/watch_record/'+id,{method:'DELETE'});
+  const d=await fetch(A+'/api/watch_records/'+bv).then(r=>r.json());
+  renderRecords(bv,d.records);
+  loadHdr();
+}
+let st;document.getElementById('q').addEventListener('input',e=>{clearTimeout(st);st=setTimeout(()=>{kw=e.target.value;pg=0;loadV()},400)});
+
+// 对话
+async function loadSessions(){
+  const d=await fetch(A+'/api/chat/sessions').then(r=>r.json());
+  const el=document.getElementById('cl');
+  el.innerHTML=d.sessions.map(s=>`<div class="cht-item${s.id===sid?' active':''}" onclick="openSession('${s.id}')"><div class="cht-item-t">${esc(s.title||'新对话')}</div><div class="cht-item-m">${s.msg_count}条 · ${(s.updated_at||'').slice(5,16)}</div></div>`).join('')||'<div style="padding:20px;text-align:center;color:#555;font-size:11px">无对话记录</div>';
+}
+async function openSession(id){
+  sid=id;loadSessions();
+  const d=await fetch(A+'/api/chat/session/'+id).then(r=>r.json());
+  const el=document.getElementById('cms');
+  el.innerHTML=d.messages.map(m=>`<div class="cm ${m.role==='user'?'u':'b'}">${esc(m.content)}</div>`).join('');
+  el.scrollTop=el.scrollHeight;
+}
+async function newChat(){
+  const bv=document.getElementById('cbv').value.trim()||null;
+  const m=document.getElementById('cm').value;
+  const cs=document.getElementById('cs').checked;
+  const r=await fetch(A+'/api/chat/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bv_id:bv,model:m,include_stats:cs})});
+  const d=await r.json();sid=d.session_id;
+  document.getElementById('cms').innerHTML='';loadSessions();
+}
+async function sendMsg(){
+  const inp=document.getElementById('ci'),sndBtn=document.querySelector('.cht-in .btn');
+  const txt=inp.value.trim();if(!txt)return;inp.value='';
+  if(!sid)await newChat();
+  const el=document.getElementById('cms');
+  const uDiv=document.createElement('div');uDiv.className='cm u';uDiv.textContent=txt;el.appendChild(uDiv);
+  const ldDiv=document.createElement('div');ldDiv.className='cm b ld';ldDiv.id='ld';ldDiv.textContent='思考中...';el.appendChild(ldDiv);
+  el.scrollTop=el.scrollHeight;
+  inp.disabled=true;sndBtn.disabled=true;
+  try{
+    const r=await fetch(A+'/api/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sid,message:txt,web_search:document.getElementById('cws').checked})});
+    document.getElementById('ld')?.remove();
+    if(!r.ok){const e=await r.json().catch(()=>({}));const errDiv=document.createElement('div');errDiv.className='cm b';errDiv.style.color='#f55050';errDiv.textContent=e.detail||'失败';el.appendChild(errDiv);}
+    else{
+      const bbl=document.createElement('div');bbl.className='cm b';
+      const mainDiv=document.createElement('div');bbl.appendChild(mainDiv);el.appendChild(bbl);
+      let twrap=null,tbody=null,tlabel=null,tarrow=null,tstart=null,ttimer=null;
+      function initT(){tstart=Date.now();twrap=document.createElement('div');twrap.className='thinking-wrap';const th=document.createElement('div');th.className='thinking-hdr';tlabel=document.createElement('span');tlabel.textContent='思考中...';tarrow=document.createElement('span');tarrow.textContent=' ▼';th.appendChild(tlabel);th.appendChild(tarrow);tbody=document.createElement('div');tbody.className='thinking-body';twrap.appendChild(th);twrap.appendChild(tbody);bbl.insertBefore(twrap,mainDiv);th.addEventListener('click',()=>{tbody.classList.toggle('hidden');tarrow.textContent=tbody.classList.contains('hidden')?' ▶':' ▼';});ttimer=setInterval(()=>{tlabel.textContent=`思考中 ${((Date.now()-tstart)/1000).toFixed(1)}s`;},200);}
+      function finishT(){if(!ttimer)return;clearInterval(ttimer);ttimer=null;tlabel.textContent=`思考完成 (${((Date.now()-tstart)/1000).toFixed(1)}s)`;tbody.classList.add('hidden');tarrow.textContent=' ▶';}
+      const rd=r.body.getReader(),dc=new TextDecoder();let buf='';
+      while(true){const{done,value}=await rd.read();if(done)break;buf+=dc.decode(value,{stream:true});const ls=buf.split('\n');buf=ls.pop();for(const l of ls){if(!l.startsWith('data: '))continue;try{const d=JSON.parse(l.slice(6));if(d.error){mainDiv.style.color='#f55050';mainDiv.textContent=d.error;break}if(d.reasoning){if(!twrap)initT();tbody.textContent+=d.reasoning;tbody.scrollTop=tbody.scrollHeight;}if(d.delta){finishT();mainDiv.textContent+=d.delta;el.scrollTop=el.scrollHeight;}if(d.done){loadHdr();loadSessions();}}catch{}}}
+      finishT();
+    }
+  }catch(e){document.getElementById('ld')?.remove();const errDiv=document.createElement('div');errDiv.className='cm b';errDiv.style.color='#f55050';errDiv.textContent=e.message;el.appendChild(errDiv);}
+  finally{inp.disabled=false;sndBtn.disabled=false;inp.focus();}
+  el.scrollTop=el.scrollHeight;
+}
+document.getElementById('ci').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}});
+
+// 统计
+async function loadStats(){
+  const el=document.getElementById('st');
+  el.textContent='加载中...';
+  let d;
+  try{d=await fetch(A+'/api/stats/extended').then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})}
+  catch(e){el.innerHTML='<div class="empty" style="color:#f55050">加载失败: '+e.message+'</div>';return;}
+  const mxU=d.top_ups[0]?.count||1,mxZ=d.top_zones[0]?.count||1;
+  const mxH=d.hourly?.length?Math.max(...d.hourly.map(h=>h.count)):1;
+  el.innerHTML=`
+    <div class="sg">
+      <div class="sc"><div class="n">${d.total_unique_videos}</div><div class="l">不同视频</div></div>
+      <div class="sc"><div class="n">${d.total_watches}</div><div class="l">总观看</div></div>
+      <div class="sc"><div class="n">${d.total_duration_hours}h</div><div class="l">总时长</div></div>
+      <div class="sc"><div class="n">${d.tracking_days||0}</div><div class="l">跟踪天数</div></div>
+      <div class="sc"><div class="n">${d.daily_avg_videos||0}</div><div class="l">日均观看</div></div>
+      <div class="sc"><div class="n">${d.daily_avg_hours||0}h</div><div class="l">日均时长</div></div>
+      <div class="sc"><div class="n">${d.avg_max_speed||1}x</div><div class="l">均倍速</div></div>
+      <div class="sc"><div class="n">${d.completion_rate||0}%</div><div class="l">完成率</div></div>
+      <div class="sc"><div class="n">${d.summarized_count||0}</div><div class="l">已总结</div></div>
+    </div>
+    <div class="ss"><h3>最常看的UP主</h3>${d.top_ups.map(u=>`<div class="sb"><div class="sb-n" title="${u.name}">${u.name}</div><div class="sb-f" style="width:${u.count/mxU*200}px;background:#2a4a6a"></div><div class="sb-c">${u.count}</div></div>`).join('')}</div>
+    ${d.top_tags?.length?`<div class="ss"><h3>标签分布（Top 20）</h3><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${d.top_tags.map(t=>{const sz=Math.max(11,Math.min(16,11+t.count/d.top_tags[0].count*5));return`<span style="font-size:${sz}px;padding:3px 9px;border-radius:12px;background:#f0e8d8;color:#6a4820;border:1px solid #ddd0b0;cursor:default" title="${t.count}次">${esc(t.tag)}<sup style="font-size:9px;color:#a08060;margin-left:2px">${t.count}</sup></span>`}).join('')}</div></div>`:''}
+    <div class="ss"><h3>观看时段 (24h)</h3><div class="hbar">${Array.from({length:24},(_,h)=>{const c=(d.hourly||[]).find(x=>x.hour===h);const cnt=c?c.count:0;return`<div class="hbar-col" style="height:${Math.max(2,cnt/mxH*70)}px" data-tip="${h}:00 ${cnt}次"></div>`}).join('')}</div><div style="display:flex;justify-content:space-between;font-size:9px;color:#555;margin-top:2px"><span>0</span><span>6</span><span>12</span><span>18</span><span>23</span></div></div>
+    ${d.daily_trend?.length?`<div class="ss"><h3>近30天趋势</h3><div class="hbar" style="height:60px">${d.daily_trend.map(t=>{const mx=Math.max(...d.daily_trend.map(x=>x.count));return`<div class="hbar-col" style="height:${Math.max(2,t.count/mx*55)}px;background:#4a6a4a" data-tip="${t.day.slice(5)} ${t.count}次"></div>`}).join('')}</div></div>`:''}
+    ${d.referrer_types?.length?`<div class="ss"><h3>来源分布</h3>${d.referrer_types.map(r=>`<div class="sb"><div class="sb-n">${r.type}</div><div class="sb-f" style="width:${r.count/d.referrer_types[0].count*200}px;background:#5a4a3a"></div><div class="sb-c">${r.count}</div></div>`).join('')}</div>`:''}
+  `;
+}
+
+// 数据库
+const _fullText={};
+async function loadTable(){
+  const t=document.getElementById('dbt').value;
+  const r=await fetch(A+'/api/db/'+t).then(r=>r.json());
+  document.getElementById('dbc').textContent=`${r.total} 条`;
+  if(!r.rows.length){document.getElementById('dbv').innerHTML='<div class="empty">空表</div>';return}
+  const cols=r.columns;
+  // 长文本列（超过80字符则可展开）
+  const longCols=new Set(['full_text','timeline_json','description','content','tags','summary']);
+  let rowIdx=0;
+  document.getElementById('dbv').innerHTML=`<table class="dbtbl"><thead><tr>${cols.map(c=>'<th>'+c+'</th>').join('')}</tr></thead><tbody>${r.rows.map(row=>{const ri=rowIdx++;return'<tr>'+cols.map(c=>{const raw=String(row[c]??'');const isLong=longCols.has(c)&&raw.length>80;if(isLong){const key='r'+ri+'_'+c;_fullText[key]=raw;return`<td class="expandable" onclick="showModal('${c}',_fullText['${key}'])">${esc(raw.slice(0,80))}…</td>`}return`<td title="${esc(raw)}">${esc(raw.slice(0,80))}</td>`}).join('')+'</tr>'}).join('')}</tbody></table>`;
+}
+function showModal(col,text){
+  document.getElementById('modal-title').textContent=col;
+  document.getElementById('modal-body').textContent=text;
+  document.getElementById('modal-bg').classList.add('open');
+}
+function closeModal(){document.getElementById('modal-bg').classList.remove('open')}
+
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\n/g,' ')}
+
+// 进度条速度估算（总结模态框复用）
+function _spbSpeed(t){if(t.includes('下载音频'))return 150000;if(t.includes('Whisper')||t.includes('转写'))return 40000;if(t.includes('总结'))return 20000;return 8000;}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeSummModal();}})
+
+// 设置 — Provider/Model 映射
+// 价格格式：¥输入/输出 或 $输入/输出（每百万 tokens，参考值，以官网为准）
+// input/output：每百万 tokens 价格（参考值，以各官网为准）；cur: '¥'|'$'
+// ELO 来源：LM Arena lmarena-ai/leaderboard-dataset (text/latest), 抓取于 2026-04-19
+// min=1083.4  max=1499.7（前300名），公式：perf = round((elo-min)/(max-min)*9+1)
+const PROVIDERS={
+  deepseek:{label:'DeepSeek',base_url:'https://api.deepseek.com/v1',
+    models:[{id:'deepseek-chat',    label:'V3.2',     elo:1423.3,perf:8, input:2, output:3,  cur:'¥'},
+            {id:'deepseek-reasoner',label:'V3.2 思考', elo:1419.6,perf:8, input:2, output:3,  cur:'¥'}]},
+  qwen:{label:'通义千问',base_url:'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    models:[{id:'qwen-max',  label:'Qwen Max',   elo:1438.4,perf:9, input:2.4, output:9.6,  cur:'¥'},
+            {id:'qwen-plus', label:'Qwen Plus',  elo:1299.1,perf:6, input:0.8, output:2,    cur:'¥'},
+            {id:'qwen-turbo',label:'Qwen Turbo', elo:null,  perf:null, input:0.3, output:0.6,  cur:'¥'},
+            {id:'qwen-long', label:'Qwen Long',  elo:null,  perf:null, input:0.5, output:2,    cur:'¥'}]},
+  doubao:{label:'豆包',base_url:'https://ark.volcengine.com/api/v3',
+    models:[{id:'doubao-1.5-pro-32k', label:'1.5 Pro 32k',  elo:null,perf:null, input:0.8, output:2,   cur:'¥'},
+            {id:'doubao-1.5-pro-256k',label:'1.5 Pro 256k', elo:null,perf:null, input:5,   output:9,   cur:'¥'},
+            {id:'doubao-1.5-lite-32k',label:'1.5 Lite 32k', elo:null,perf:null, input:0.3, output:0.6, cur:'¥'}]},
+  moonshot:{label:'Moonshot',base_url:'https://api.moonshot.cn/v1',
+    models:[{id:'moonshot-v1-8k',  label:'V1 8k',  elo:null,perf:null, input:12, output:12, cur:'¥'},
+            {id:'moonshot-v1-32k', label:'V1 32k', elo:null,perf:null, input:24, output:24, cur:'¥'},
+            {id:'moonshot-v1-128k',label:'V1 128k',elo:null,perf:null, input:60, output:60, cur:'¥'}]},
+  zhipu:{label:'智谱',base_url:'https://open.bigmodel.cn/api/paas/v4',
+    models:[{id:'glm-4-plus', label:'GLM-4+',     elo:1289.6,perf:5, input:5,   output:5,   cur:'¥'},
+            {id:'glm-4-long', label:'GLM-4 Long', elo:null,  perf:null, input:1,   output:1,   cur:'¥'},
+            {id:'glm-4-flash',label:'GLM-4 Flash',elo:null,  perf:null, input:null,output:null,cur:'¥',free:true}]},
+  openai:{label:'OpenAI',base_url:'https://api.openai.com/v1',
+    models:[{id:'gpt-4o',      label:'GPT-4o',      elo:1300.4,perf:6, input:2.5,  output:10,  cur:'$'},
+            {id:'gpt-4o-mini', label:'GPT-4o mini',  elo:1286.4,perf:5, input:0.15, output:0.6, cur:'$'},
+            {id:'gpt-4.1',     label:'GPT-4.1',      elo:1381.7,perf:7, input:2,    output:8,   cur:'$'},
+            {id:'gpt-4.1-mini',label:'GPT-4.1 mini', elo:1340.3,perf:7, input:0.4,  output:1.6, cur:'$'},
+            {id:'o3',          label:'o3',            elo:1409.1,perf:8, input:10,   output:40,  cur:'$'},
+            {id:'o4-mini',     label:'o4-mini',       elo:1352.6,perf:7, input:1.1,  output:4.4, cur:'$'}]},
+  google:{label:'Google',base_url:'https://generativelanguage.googleapis.com/v1beta/openai',
+    models:[{id:'gemini-2.0-flash',               label:'2.0 Flash', elo:1353.8,perf:7, input:0.1,  output:0.4, cur:'$'},
+            {id:'gemini-2.5-flash-preview-05-20', label:'2.5 Flash', elo:1417.8,perf:8, input:0.15, output:0.6, cur:'$'},
+            {id:'gemini-2.5-pro-preview-06-05',   label:'2.5 Pro',   elo:1460.9,perf:9, input:1.25, output:10,  cur:'$'}]},
+  anthropic:{label:'Anthropic',base_url:'https://api.anthropic.com/v1',
+    models:[{id:'claude-opus-4-5',          label:'Opus 4.5',   elo:1447.7,perf:9, input:15,  output:75, cur:'$'},
+            {id:'claude-sonnet-4-5',        label:'Sonnet 4.5', elo:1432.3,perf:9, input:3,   output:15, cur:'$'},
+            {id:'claude-haiku-4-5-20251001',label:'Haiku 4.5',  elo:1387.3,perf:8, input:0.8, output:4,  cur:'$'}]},
+  openrouter:{label:'OpenRouter',base_url:'https://openrouter.ai/api/v1',models:[]},
+  custom:{label:'自定义',base_url:'',models:[]}
+};
+
+// 当前编辑的 provider 和已选模型
+let _cfgProvider = 'deepseek';
+let _cfgModelId  = '';
+let _sortCol = 'value', _sortAsc = false;
+let _curMode = 'cny';   // 'cny' | 'usd'
+let _usdToCny = 7.3;    // 会被汇率接口更新
+let _fxFetched = false; // 是否已获取过汇率
+let _arenaMin    = 1083.4; // Arena ELO 榜单最低分（内置，可被获取按钮刷新）
+let _arenaMax    = 1499.7; // Arena ELO 榜单最高分（内置，可被获取按钮刷新）
+let _arenaScores = {};     // 上次获取的完整 ELO scores，供模型导入时同步匹配
+
+// 货币转换：将原始价格转为当前显示货币
+function _toCur(price, origCur) {
+  if (price == null) return null;
+  if (_curMode === 'cny') return origCur === '$' ? price * _usdToCny : price;
+  return origCur === '¥' ? price / _usdToCny : price;
+}
+
+// 将价格转为 CNY（用于性价比计算）
+function _toCNY(price, origCur) {
+  if (price == null) return null;
+  return origCur === '$' ? price * _usdToCny : price;
+}
+
+// 渲染模型表格
+function _renderModelTable(activeProvider, activeModelId){
+  const tbody = document.getElementById('cfg-model-tbody');
+  if(!tbody) return;
+  const curSymbol = _curMode === 'cny' ? '¥' : '$';
+  // 收集所有行
+  const rows = [];
+  Object.entries(PROVIDERS).forEach(([pkey, prov])=>{
+    if(pkey==='custom') return;
+    (prov.models||[]).forEach(m=>{
+      const inputCNY  = _toCNY(m.input  ?? null, m.cur || '¥');
+      const outputCNY = _toCNY(m.output ?? null, m.cur || '¥');
+      const totalCNY  = (inputCNY != null && outputCNY != null) ? inputCNY + outputCNY : null;
+      const valueSortKey = (m.perf != null && totalCNY != null && totalCNY > 0)
+        ? m.perf / totalCNY * 10
+        : -1;
+      rows.push({
+        provKey:pkey, provLabel:prov.label||pkey,
+        id:m.id, label:m.label||m.id, perf: m.perf ?? null, elo: m.elo ?? null,
+        input: m.input ?? null, output: m.output ?? null, cur: m.cur || '¥',
+        free: m.free === true,
+        totalCNY, valueSortKey
+      });
+    });
+  });
+  // 排序值映射
+  const _v = r => ({
+    prov:  r.provLabel,
+    label: r.label,
+    perf:  r.perf ?? -1,
+    input:  _toCur(r.input,  r.cur) ?? 999999,
+    output: _toCur(r.output, r.cur) ?? 999999,
+    total: r.totalCNY ?? 999999,
+    value: r.valueSortKey
+  });
+  rows.sort((a,b)=>{
+    const va=_v(a)[_sortCol], vb=_v(b)[_sortCol];
+    const cmp = typeof va==='string' ? va.localeCompare(vb,'zh') : va-vb;
+    return _sortAsc ? cmp : -cmp;
+  });
+  // 更新表头箭头
+  ['prov','label','perf','input','output','total','value'].forEach(col=>{
+    const th=document.getElementById('th-'+col);
+    if(!th)return;
+    th.querySelector('.th-arrow').textContent = _sortCol===col ? (_sortAsc?'↑':'↓') : '';
+  });
+  // 性能分颜色
+  function perfColor(p) {
+    if (p == null) return '#b09878';
+    if (p >= 8) return '#3a8040';
+    if (p >= 5) return '#c07808';
+    return '#888';
+  }
+  // 渲染行
+  tbody.innerHTML='';
+  rows.forEach(r=>{
+    const active = r.provKey===activeProvider && r.id===activeModelId;
+    const tr = document.createElement('tr');
+    tr.style.cssText = `background:${active?'#fef5d8':'#fffaf3'};cursor:pointer;transition:background .1s`;
+    tr.onmouseenter=()=>{ if(!active) tr.style.background='#fdf4e8'; };
+    tr.onmouseleave=()=>{ if(!active) tr.style.background='#fffaf3'; };
+    const isFree = r.free === true;
+    const fmtP = (v, origCur) => {
+      if (isFree) return '<span style="color:#3a8040;font-size:11px;font-weight:600">免费</span>';
+      const cv = _toCur(v, origCur);
+      if (cv == null) return '—';
+      return curSymbol + (cv < 1 ? cv.toFixed(2) : cv % 1 === 0 ? cv : cv.toFixed(2));
+    };
+    const perfDisplay = r.perf != null
+      ? r.perf + (r.elo != null ? `<br><span style="font-size:10px;color:#b09878;font-weight:400">${Math.round(r.elo)}</span>` : '')
+      : '—';
+    const perfCol = perfColor(r.perf);
+    const totalCNYDisplay = isFree
+      ? '<span style="color:#3a8040;font-size:11px;font-weight:600">免费</span>'
+      : r.totalCNY != null
+        ? '¥' + (r.totalCNY < 1 ? r.totalCNY.toFixed(2) : r.totalCNY % 1 === 0 ? r.totalCNY : r.totalCNY.toFixed(2))
+        : '—';
+    const valueCNY = isFree ? '<span style="color:#3a8040;font-size:11px;font-weight:600">免费</span>'
+      : r.totalCNY != null && r.totalCNY > 0 && r.perf != null
+        ? (r.perf / r.totalCNY * 10).toFixed(2)
+        : '—';
+    const valueCol = r.valueSortKey > 0 ? perfColor(Math.min(10, r.valueSortKey * 2)) : '#b09878';
+    tr.innerHTML=`
+      <td style="padding:6px 10px;border:1px solid #e8d8b0;color:#5a3a10">${esc(r.provLabel)}</td>
+      <td style="padding:6px 10px;border:1px solid #e8d8b0;font-weight:${active?'700':'400'};color:${active?'#c07808':'#3a2c18'}">${esc(r.label)}<br><span style="font-size:11px;color:#b09878">${esc(r.id)}</span></td>
+      <td style="padding:6px 10px;border:1px solid #e8d8b0;text-align:center;font-weight:600;color:${perfCol}">${perfDisplay}</td>
+      <td style="padding:6px 10px;border:1px solid #e8d8b0;text-align:right;color:#5a3a10">${fmtP(r.input,r.cur)}</td>
+      <td style="padding:6px 10px;border:1px solid #e8d8b0;text-align:right;color:#5a3a10">${fmtP(r.output,r.cur)}</td>
+      <td style="padding:6px 10px;border:1px solid #e8d8b0;text-align:right;color:#7a5030">${totalCNYDisplay}</td>
+      <td style="padding:6px 10px;border:1px solid #e8d8b0;text-align:right;font-weight:600;color:${valueCol}">${valueCNY}</td>
+      <td style="padding:6px 10px;border:1px solid #e8d8b0;text-align:center">${active?'<span style="color:#c07808;font-size:15px">●</span>':'<span style="color:#d4b880">○</span>'}</td>`;
+    tr.onclick=()=>_selectModelRow(r.provKey, r.id);
+    tbody.appendChild(tr);
+  });
+}
+
+function sortModelTable(col){
+  if(_sortCol===col) _sortAsc=!_sortAsc;
+  else { _sortCol=col; _sortAsc = (col==='value'||col==='perf') ? false : true; }
+  _renderModelTable(_cfgProvider, _cfgModelId);
+}
+
+function _selectModelRow(provKey, modelId){
+  _cfgProvider = provKey;
+  _cfgModelId  = modelId;
+  document.getElementById('cfg-provider').value = provKey;
+  // 同步模型下拉
+  _populateModelSel(provKey, modelId);
+  // 加载该 provider 的 key/base
+  fetch(A+'/api/settings').then(r=>r.json()).then(s=>{
+    const pcfg=(s.providers||{})[provKey]||{};
+    document.getElementById('cfg-apikey').value=pcfg.api_key||'';
+    document.getElementById('cfg-apibase').value=pcfg.api_base_url||PROVIDERS[provKey]?.base_url||'';
+  }).catch(()=>{});
+  _renderModelTable(provKey, modelId);
+  _syncSummModal(modelId);
+}
+
+// 填充 cfg-model-sel 模型下拉
+function _populateModelSel(provider, selectedModel){
+  const prov = PROVIDERS[provider] || {models:[]};
+  const sel = document.getElementById('cfg-model-sel');
+  if(!sel) return;
+  sel.innerHTML = '';
+  prov.models.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m.id; o.textContent = m.label || m.id; sel.appendChild(o);
+  });
+  if(selectedModel) sel.value = selectedModel;
+  // 若 selectedModel 不在列表中，选第一个
+  if(sel.value !== selectedModel && prov.models.length > 0) sel.value = prov.models[0].id;
+}
+
+function onProviderChange(provider){
+  _cfgProvider = provider;
+  // 刷新模型下拉（保留当前模型选择，若不属于此服务商则清空）
+  const provModels = PROVIDERS[provider]?.models || [];
+  const keepModel = provModels.some(m => m.id === _cfgModelId) ? _cfgModelId : '';
+  _cfgModelId = keepModel;
+  _populateModelSel(provider, keepModel);
+  _renderModelTable(provider, _cfgModelId);
+  fetch(A+'/api/settings').then(r=>r.json()).then(s=>{
+    const pcfg=(s.providers||{})[provider]||{};
+    document.getElementById('cfg-apikey').value=pcfg.api_key||'';
+    document.getElementById('cfg-apibase').value=pcfg.api_base_url||PROVIDERS[provider]?.base_url||'';
+  });
+}
+
+async function fetchExchangeRate(){
+  const statusEl = document.getElementById('fx-status-label');
+  const inputEl  = document.getElementById('fx-manual-input');
+  const btn      = document.getElementById('fx-fetch-btn');
+  if(btn){ btn.disabled=true; btn.textContent='获取中...'; }
+  try{
+    const r = await fetch(A+'/api/exchange_rate');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    if(d.USD_to_CNY){
+      _usdToCny = parseFloat(d.USD_to_CNY);
+      _fxFetched = true;
+      if(inputEl){ inputEl.value = _usdToCny.toFixed(2); inputEl.style.borderColor='#d4b880'; }
+      if(statusEl){ statusEl.textContent = '✓'; statusEl.style.color='#3a8040'; }
+      if(btn){ btn.textContent='已更新'; setTimeout(()=>{ btn.textContent='获取汇率'; btn.disabled=false; },2000); }
+      else if(btn){ btn.disabled=false; }
+      _renderModelTable(_cfgProvider, _cfgModelId);
+      return;
+    }
+    throw new Error('无 CNY 数据');
+  }catch{
+    if(statusEl){ statusEl.textContent = '获取失败'; statusEl.style.color='#c05040'; }
+    if(inputEl){ inputEl.style.borderColor='#c05040'; }
+    if(btn){ btn.textContent='重试'; btn.disabled=false; }
+  }
+}
+
+// API model ID → Arena model name 的显式对照（Arena 名与 API 名不同的情况）
+const ARENA_ALIASES = {
+  'deepseek-chat':                  'deepseek-v3.2',
+  'deepseek-reasoner':              'deepseek-v3.2-thinking',
+  'qwen-max':                       'qwen3-max-preview',
+  'qwen-plus':                      'qwen2.5-plus-1127',
+  'qwen-turbo':                     'qwen2.5-7b-instruct',
+  'gemini-2.5-pro-preview-06-05':   'gemini-2.5-pro',
+  'gemini-2.5-flash-preview-05-20': 'gemini-2.5-flash',
+  'claude-opus-4-5':                'claude-opus-4-5-20251101',
+  'claude-sonnet-4-5':              'claude-sonnet-4-5-20250929',
+};
+
+// 名称归一化：去日期后缀、去 preview/thinking 等后缀词、点→横杠
+function _normArenaName(n){
+  return n.toLowerCase()
+    .replace(/[-_]\d{8}(-|$)/g,'$1')
+    .replace(/-(preview|exp|latest|high|low|fast|instruct)(-|$)/g,'$2')
+    .replace(/\./g,'-').replace(/-+$/,'');
+}
+
+// 从 Arena scores 里匹配 model ID，先查显式别名，再模糊匹配
+function _matchArenaELO(modelId, scores){
+  // OpenRouter 格式 "provider/model-name"，剥掉前缀后再匹配
+  const bareId = modelId.includes('/') ? modelId.split('/').slice(1).join('/') : modelId;
+  // 同时也去掉 ":free" / ":thinking" 等 OpenRouter 后缀
+  const cleanId = bareId.replace(/:[^:]+$/, '');
+
+  // 1. 显式别名（用原始 ID）
+  const alias = ARENA_ALIASES[modelId];
+  if(alias && scores[alias] != null) return scores[alias];
+  // 2. 精确匹配
+  if(scores[cleanId] != null) return scores[cleanId];
+  // 3. 模糊匹配（归一后前缀匹配，取评分最高）
+  const normId = _normArenaName(cleanId);
+  let best = null, bestScore = -1;
+  for(const [name, rating] of Object.entries(scores)){
+    const normName = _normArenaName(name);
+    if(normName === normId || normName.startsWith(normId) || normId.startsWith(normName)){
+      if(rating > bestScore){ bestScore = rating; best = rating; }
+    }
+  }
+  return best;
+}
+
+async function fetchArenaELO(){
+  const btn = document.getElementById('cfg-elo-btn');
+  const origText = btn.textContent;
+  btn.disabled = true; btn.textContent = '获取中...';
+  try{
+    const r = await fetch(A+'/api/arena_elo?refresh=1');  // 刷新时强制重抓并更新缓存
+    if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.detail||r.status); }
+    const d = await r.json();
+    const scores = d.scores || {};
+    _arenaMin = d.min; _arenaMax = d.max;
+    _arenaScores = scores;
+
+    // ELO → 1-10（线性映射，min→1，max→10，保留整数）
+    const eloToPerf = elo => Math.max(1, Math.min(10, Math.round((elo - _arenaMin)/(_arenaMax - _arenaMin)*9+1)));
+
+    // 只更新尚无 ELO 数据的模型（已有内置数据的不覆盖）
+    let updated = 0;
+    Object.values(PROVIDERS).forEach(prov=>{
+      (prov.models||[]).forEach(m=>{
+        if(m.elo != null) return; // 已有数据，跳过
+        const elo = _matchArenaELO(m.id, scores);
+        if(elo != null){
+          m.elo  = elo;
+          m.perf = eloToPerf(elo);
+          updated++;
+        }
+      });
+    });
+
+    _renderModelTable(_cfgProvider, _cfgModelId);
+    const hint = document.getElementById('arena-range-hint');
+    if(hint) hint.textContent = `（本次范围：${Math.round(_arenaMin)}–${Math.round(_arenaMax)}，共 ${d.count} 个模型）`;
+    btn.textContent = `✓ 更新 ${updated} 个`;
+    setTimeout(()=>{ btn.textContent=origText; btn.disabled=false; }, 2500);
+  }catch(e){
+    alert('获取 Arena ELO 失败: '+e.message);
+    btn.textContent=origText; btn.disabled=false;
+  }
+}
+
+async function fetchProviderModels(){
+  const btn = document.getElementById('cfg-fetch-btn');
+  const origText = btn.textContent;
+  btn.disabled = true; btn.textContent = '获取中...';
+  try{
+    const r = await fetch(A+'/api/provider_models');
+    if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.detail||r.status); }
+    const d = await r.json();
+    // openai/anthropic/google：只更新已有模型的价格，保留 perf/elo，不扩充列表
+    // openrouter：完整替换，同时尝试从已缓存的 Arena ELO 匹配性能分
+    const _PRICE_ONLY = new Set(['openai','anthropic','google']);
+    const hasArena = Object.keys(_arenaScores).length > 0;
+    const eloToPerf = elo => Math.max(1, Math.min(10, Math.round((elo - _arenaMin)/(_arenaMax - _arenaMin)*9+1)));
+    Object.keys(d).forEach(prov => {
+      if(!PROVIDERS[prov]) return;
+      const fetched = d[prov];
+      const fetchedMap = {};
+      fetched.forEach(m => { fetchedMap[m.id] = m; });
+      if(_PRICE_ONLY.has(prov)){
+        // 仅更新现有模型的价格，perf/elo/label 保持不变
+        PROVIDERS[prov].models = PROVIDERS[prov].models.map(m => {
+          const fm = fetchedMap[m.id] || {};
+          return {...m,
+            input:  fm.input  ?? m.input,
+            output: fm.output ?? m.output,
+            cur:    fm.cur    || m.cur};
+        });
+      } else if(prov === 'openrouter'){
+        // OpenRouter 完整替换，同步匹配 Arena ELO
+        PROVIDERS[prov].models = fetched.map(m => {
+          const elo = hasArena ? _matchArenaELO(m.id, _arenaScores) : null;
+          return {...m, elo: elo ?? null, perf: elo != null ? eloToPerf(elo) : null};
+        });
+      }
+    });
+    // 刷新模型表格和下拉
+    _populateModelSel(_cfgProvider, _cfgModelId);
+    _renderModelTable(_cfgProvider, _cfgModelId);
+    const total = Object.values(d).reduce((s,arr)=>s+arr.length,0);
+    btn.textContent = `✓ 已获取 ${total} 个`;
+    setTimeout(()=>{ btn.textContent = origText; btn.disabled = false; }, 2500);
+  }catch(e){
+    alert('获取失败: '+e.message);
+    btn.textContent = origText; btn.disabled = false;
+  }
+}
+
+async function saveAICfg(){
+  const provider = _cfgProvider;
+  const model    = _cfgModelId || '';
+  const apiKey   = document.getElementById('cfg-apikey').value.trim();
+  const apiBase  = document.getElementById('cfg-apibase').value.trim();
+  const btn = document.getElementById('cfg-save-btn');
+  const msg = document.getElementById('cfg-save-msg');
+  btn.disabled=true; btn.textContent='保存中...';
+  try{
+    await _saveRaw({
+      default_provider:provider,
+      providers:{[provider]:{api_key:apiKey,api_base_url:apiBase,default_model:model}},
+      updated_at:new Date().toISOString()
+    });
+    await _loadAndRenderStatus();
+    _renderModelTable(provider, model);
+    msg.style.display='block'; setTimeout(()=>{msg.style.display='none';},2500);
+  }catch(e){alert('保存失败: '+e.message);}
+  finally{btn.disabled=false; btn.textContent='保存配置';}
+}
+
+function saveSetting(key,val){
+  _saveRaw({[key]:val,updated_at:new Date().toISOString()}).then(()=>_loadAndRenderStatus());
+}
+
+// 保存到 providers[_cfgProvider]
+async function _saveProviderCfg(obj){
+  await _saveRaw({providers:{[_cfgProvider]:obj},updated_at:new Date().toISOString()});
+  _loadAndRenderStatus();
+}
+
+// 直接保存扁平字段
+async function _saveRaw(obj){
+  try{
+    await fetch(A+'/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(obj)});
+  }catch{}
+}
+
+async function _loadAndRenderStatus(){
+  try{
+    const s=await fetch(A+'/api/settings').then(r=>r.json());
+    _renderCfgStatus(s);
+  }catch{}
+}
+
+function _renderCfgStatus(s){
+  const prov=s.default_provider||'deepseek';
+  const pcfg=(s.providers||{})[prov]||{};
+  const hasKey=!!(pcfg.api_key);
+  const maskedKey=hasKey?'••••'+pcfg.api_key.slice(-4):'未配置';
+  const provLabel=(PROVIDERS[prov]||{label:prov}).label;
+  const model=pcfg.default_model||'deepseek-chat（默认）';
+  const baseUrl=pcfg.api_base_url||PROVIDERS[prov]?.base_url||'';
+  const updAt=s.updated_at?new Date(s.updated_at).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'未记录';
+  document.getElementById('cfg-status-body').innerHTML=
+    `服务商：<b style="color:#c07808">${esc(provLabel)}</b>&nbsp;&nbsp;`+
+    `API Key：<b style="color:${hasKey?'#3a8040':'#c04040'}">${maskedKey}</b><br>`+
+    `模型：${esc(model)}<br>`+
+    `Base URL：${esc(baseUrl)||'（默认）'}<br>`+
+    `最后更新：${updAt}`;
+}
+
+function _syncSummModal(modelId){
+  const sel=document.getElementById('summ-m');
+  if(!sel)return;
+  const prov=PROVIDERS[_cfgProvider]||{models:[]};
+  if(prov.models.length>0){
+    sel.innerHTML='';
+    prov.models.forEach(m=>{const o=document.createElement('option');o.value=m.id;o.textContent=m.label;sel.appendChild(o);});
+    if(modelId)sel.value=modelId;
+  }
+}
+
+async function loadCfg(){
+  try{
+    const s=await fetch(A+'/api/settings').then(r=>r.json());
+    document.getElementById('cfg-auto-asr').checked=s.auto_asr!==false;
+    if(s.whisper_model)document.getElementById('cfg-whisper').value=s.whisper_model;
+    const provider=s.default_provider||'deepseek';
+    const pcfg=(s.providers||{})[provider]||{};
+    const modelId=pcfg.default_model||'';
+    _cfgProvider=provider; _cfgModelId=modelId;
+    document.getElementById('cfg-provider').value=provider;
+    document.getElementById('cfg-apikey').value=pcfg.api_key||'';
+    document.getElementById('cfg-apibase').value=pcfg.api_base_url||PROVIDERS[provider]?.base_url||'';
+    _populateModelSel(provider, modelId);
+    _renderModelTable(provider, modelId);
+    _renderCfgStatus(s);
+    _syncSummModal(modelId);
+  }catch(e){
+    document.getElementById('cfg-status-body').textContent='加载失败：'+e.message;
+  }
+}
+
+loadHdr();loadV();setInterval(loadHdr,60000);
+
+// 货币切换事件
+document.querySelectorAll('input[name="cur-mode"]').forEach(radio => {
+  radio.addEventListener('change', function() {
+    _curMode = this.value;
+    _renderModelTable(_cfgProvider, _cfgModelId);
+  });
+});
+
+// 汇率手动输入
+document.getElementById('fx-manual-input')?.addEventListener('change', function(){
+  const v = parseFloat(this.value);
+  if(v > 0){
+    _usdToCny = v;
+    const sl = document.getElementById('fx-status-label');
+    if(sl){ sl.textContent = '1$≈¥'; sl.style.color='#a08060'; }
+    this.style.borderColor = '#d4b880';
+    _renderModelTable(_cfgProvider, _cfgModelId);
+  }
+});
+
+// cfg-model-sel change 事件
+document.getElementById('cfg-model-sel')?.addEventListener('change', function() {
+  _cfgModelId = this.value;
+  _renderModelTable(_cfgProvider, _cfgModelId);
+  _syncSummModal(_cfgModelId);
+});
+
+// 页面加载时：先从 DB 拉 Arena ELO（填充 _arenaScores），再获取模型价格（可立即做 ELO 匹配）
+fetchExchangeRate();
+fetch(A+'/api/arena_elo').then(r=>r.ok?r.json():null).then(d=>{
+  if(d && d.scores){ _arenaScores=d.scores; _arenaMin=d.min; _arenaMax=d.max; }
+}).catch(()=>{}).finally(()=>{ fetchProviderModels().catch(()=>{}); });
+fetch(A+'/api/settings').then(r=>r.json()).then(s=>{
+  const provider=s.default_provider||'deepseek';
+  const pcfg=(s.providers||{})[provider]||{};
+  const modelId=pcfg.default_model||'';
+  _cfgProvider=provider; _cfgModelId=modelId;
+  _populateModelSel(provider, modelId);
+  _renderModelTable(provider, modelId);  // 首次渲染（无需等待点设置 tab）
+  _syncSummModal(modelId);
+}).catch(()=>{});
+</script>
+</body>
+</html>

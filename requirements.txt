@@ -1,0 +1,12 @@
+# 核心依赖
+fastapi>=0.110.0
+uvicorn>=0.29.0
+httpx[socks]>=0.27.0
+
+# ASR 语音转写（可选，无字幕视频自动生成字幕）
+# 首次运行时 faster-whisper 会自动下载所选模型（large-v3-turbo 约 1.6GB）
+faster-whisper>=1.0.0
+yt-dlp>=2024.1.0
+
+# 联网搜索（可选，对话时启用"联网"开关需要）
+ddgs>=6.0.0

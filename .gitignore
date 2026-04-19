@@ -1,0 +1,24 @@
+# 运行时数据（含个人数据和API密钥）
+settings.json
+*.db
+audio/
+logs/
+start_silent.vbs
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+sc_status*.txt
+final*.txt

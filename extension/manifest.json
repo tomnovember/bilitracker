@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "BiliTracker",
+  "version": "1.2.0",
+  "description": "安静记录B站观看轨迹，构建个人认知数据库",
+  "permissions": ["activeTab", "storage", "tabs", "sidePanel"],
+  "host_permissions": [
+    "*://www.bilibili.com/*",
+    "http://localhost:9876/*",
+    "https://api.bilibili.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://www.bilibili.com/video/*"],
+      "js": ["page_bridge.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["*://www.bilibili.com/video/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidebar.html"
+  },
+  "action": {
+    "default_icon": {
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "BiliTracker"
+  },
+  "icons": {
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
