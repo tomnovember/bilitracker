@@ -251,7 +251,7 @@ python cli.py db                 # 数据库概况
 
 ## License
 
-MIT © 2026 唐梦 (TANG Meng)
+CC BY-NC 4.0 © 2026 唐梦 (TANG Meng)
 
 ---
 
