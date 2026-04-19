@@ -32,7 +32,6 @@
     subtitleExtracted: false,
     serverConnected: false,
     subtitleData: null,
-    autoAsr: true,
   };
 
   let _checkServerInterval = null;
@@ -130,13 +129,7 @@
         }
       }
     } catch { state.serverConnected = false; }
-    if (state.serverConnected) {
-      fetchBalance();
-      try {
-        const sr = await fetch(`${SERVER}/api/settings`, { signal: AbortSignal.timeout(2000) });
-        if (sr.ok) { const s = await sr.json(); state.autoAsr = s.auto_asr !== false; }
-      } catch {}
-    }
+    if (state.serverConnected) fetchBalance();
     updateStatusLights();
     return state.serverConnected;
   }
@@ -193,6 +186,7 @@
   // 优先从 __INITIAL_STATE__ 读 subtitle_url；没有则用 MutationObserver 等待
   // page_bridge.js 主动获取后写入 data-subtitle-url 属性，observer 立即响应
   async function extractSubtitle() {
+    const myBvId = state.bvId; // 记录开始时的 bvId，防止异步期间导航切走后数据写到新视频
     const ini = getInitialState();
     const vd = ini?.videoData || {};
     const bvid = vd.bvid || extractBvId();
@@ -221,16 +215,18 @@
       }
     }
 
+    if (state.bvId !== myBvId) return null; // 等待期间已导航离开
     if (!targetUrl) { console.warn("[BiliTracker] 未获取到字幕URL"); return null; }
     console.log("[BiliTracker] 字幕URL:", targetUrl.substring(0, 80));
     if (targetUrl.startsWith("//")) targetUrl = "https:" + targetUrl;
     else if (!targetUrl.startsWith("http")) targetUrl = "https:" + targetUrl;
 
     try {
-      const r = await fetch(targetUrl);
+      const r = await fetch(targetUrl, { signal: AbortSignal.timeout(15000) });
       const d = await r.json();
       const body = d.body || [];
       if (body.length === 0) return null;
+      if (state.bvId !== myBvId) return null; // fetch 期间导航离开，丢弃结果
       const result = {
         full_text: body.map(i => i.content).join(""),
         timeline_json: body.map(i => ({ from: i.from, to: i.to, text: i.content }))
@@ -241,22 +237,18 @@
 
       try {
         const videoData = extractVideoData();
-        fetch(`${SERVER}/api/record`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            video: videoData, subtitle: result,
-            watch: {
-              bv_id: state.bvId, opened_at: state.openedAt,
-              duration_sec: 0, play_progress: 0, play_seconds: 0,
-              completed: 0, max_speed: 1.0, speed_changes: [],
-              is_fullscreen: 0, is_autoplay: 0,
-              referrer_url: document.referrer || null,
-              referrer_type: getReferrerType(),
-              screen_width: screen.width, screen_height: screen.height,
-            }
-          })
-        });
+        chrome.runtime.sendMessage({ type: "RECORD", data: {
+          video: videoData, subtitle: result,
+          watch: {
+            bv_id: state.bvId, opened_at: state.openedAt,
+            duration_sec: 0, play_progress: 0, play_seconds: 0,
+            completed: 0, max_speed: 1.0, speed_changes: [],
+            is_fullscreen: 0, is_autoplay: 0,
+            referrer_url: document.referrer || null,
+            referrer_type: getReferrerType(),
+            screen_width: screen.width, screen_height: screen.height,
+          }
+        }}).catch(() => {});
       } catch {}
       return result;
     } catch (e) {
@@ -314,6 +306,11 @@
     const nid = extractBvId();
     if (nid && nid !== state.bvId) {
       sendData();
+      // 立即把字幕灯重置为检测中，不等 background 回推
+      const uL = document.getElementById("bt-light-sub");
+      if (uL) { uL.className = "bt-light bt-gray"; uL.title = "检测中..."; }
+      const genBtn = document.getElementById("bt-gensub");
+      if (genBtn) genBtn.classList.add("hidden");
       const elapsed = Date.now() - lastNavTime;
       if (elapsed < 5000) {
         if (!state.autoplaySession) { state.autoplaySession = crypto.randomUUID(); state.autoplayIndex = 1; }
@@ -326,8 +323,8 @@
         sent: false, subtitleExtracted: false, subtitleData: null, hasSubtitle: false,
       });
       lastNavTime = Date.now();
-      try { chrome.runtime.sendMessage({ type: "VIDEO_CHANGED", bvId: nid }); } catch {}
-      setTimeout(init, 1000);
+      chrome.runtime.sendMessage({ type: "VIDEO_CHANGED", bvId: nid }).catch(() => {});
+      init();
     }
   }
 
@@ -387,7 +384,8 @@
     const tabVisibleTotal = state.tabVisibleTotal;
     const video = document.querySelector("video");
     const videoData = extractVideoData();
-    if (!snap.subtitleData && snap.hasSubtitle) await extractSubtitle();
+    // 只在 bvId 未变时才提取（state.bvId 已是新视频时，bridge 数据对不上，会污染旧视频记录）
+    if (!snap.subtitleData && snap.hasSubtitle && state.bvId === snap.bvId) await extractSubtitle();
     const subtitleData = snap.subtitleData || state.subtitleData;
     const payload = {
       video: videoData, subtitle: subtitleData,
@@ -408,7 +406,7 @@
         screen_width: screen.width, screen_height: screen.height,
       }
     };
-    try { chrome.runtime.sendMessage({ type: "RECORD", data: payload }); } catch (e) { console.warn("[BT]", e); }
+    chrome.runtime.sendMessage({ type: "RECORD", data: payload }).catch(e => console.warn("[BT]", e));
   }
   window.addEventListener("beforeunload", sendData);
   document.addEventListener("visibilitychange", () => { if (document.hidden) sendData(); });
@@ -449,7 +447,7 @@
     });
     document.getElementById("bt-gensub").addEventListener("click", (e) => {
       e.stopPropagation();
-      chrome.runtime.sendMessage({ type: "TRIGGER_ASR", bvId: state.bvId });
+      chrome.runtime.sendMessage({ type: "TRIGGER_ASR", bvId: state.bvId }).catch(() => {});
     });
   }
 
@@ -467,75 +465,22 @@
     if (!sL) return;
     sL.className = "bt-light " + (state.serverConnected ? "bt-green" : "bt-red");
     sL.title = state.serverConnected ? "Server已连接" : "Server未连接";
-    // 字幕状态灯由 sidebar 通过 UPDATE_SUB_STATUS 推送，这里不自管
+    // 字幕状态灯由 background.js 通过 UPDATE_SUB_STATUS 推送，这里不自管
   }
 
   // ── 总结 ──
-  async function triggerSummary() {
+  function triggerSummary() {
     const btn = document.getElementById("bt-summary");
     if (!btn || !state.bvId) return;
     if (!state.serverConnected) { showToast("Server未连接，请先启动 python server.py", "error"); return; }
-    btn.textContent = "..."; btn.classList.add("bt-loading");
-    if (!state.subtitleExtracted && !state.hasSubtitle) showToast("无字幕，尝试语音转写...", "info");
-    try {
-      const r = await fetch(`${SERVER}/api/summarize`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bv_id: state.bvId })
-      });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        const msg = err.detail || `失败 (${r.status})`;
-        if (r.status === 501) showToast("请设置 DEEPSEEK_API_KEY 环境变量", "error");
-        else if (/余额|balance|quota|insufficient/i.test(msg)) showToast("API余额不足，请充值", "error");
-        else showToast(msg, "error");
-        return;
-      }
-      showSummaryPanel('');
-      const reader = r.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const d = JSON.parse(line.slice(6));
-            if (d.error) { showToast('错误: ' + d.error, 'error'); break; }
-            if (d.delta) appendSummaryPanel(d.delta);
-            if (d.done) fetchBalance();
-          } catch {}
-        }
-      }
-    } catch (e) { showToast("请求失败: " + e.message, "error"); }
-    finally { btn.textContent = "总结"; btn.classList.remove("bt-loading"); }
+    chrome.runtime.sendMessage({ type: 'ENQUEUE_SUMM', bvId: state.bvId }).catch(() => {});
+    btn.textContent = "队列中"; btn.classList.add("bt-loading");
   }
 
   // ── 自动 ASR：交给 background.js 处理，sidebar 不必打开 ──
-  function autoTriggerAsr() {
-    if (!state.bvId || !state.serverConnected) return;
-    if (state.hasSubtitle || state.subtitleExtracted) return;
-    chrome.runtime.sendMessage({ type: 'AUTO_ASR', bvId: state.bvId });
-  }
-
-  function showSummaryPanel(text) {
-    let p = document.getElementById("bt-summary-panel");
-    if (!p) {
-      p = document.createElement("div"); p.id = "bt-summary-panel";
-      p.innerHTML = `<div class="bt-sp-header"><span>AI 总结</span><span class="bt-sp-close" id="bt-sp-close">✕</span></div><div class="bt-sp-body" id="bt-sp-body"></div>`;
-      document.body.appendChild(p);
-      document.getElementById("bt-sp-close").addEventListener("click", () => p.classList.remove("bt-sp-show"));
-    }
-    document.getElementById("bt-sp-body").textContent = text;
-    p.classList.add("bt-sp-show");
-  }
-
-  function appendSummaryPanel(delta) {
-    const body = document.getElementById("bt-sp-body");
-    if (body) body.textContent += delta;
+  function reportVideoStatus() {
+    if (!state.bvId) return;
+    chrome.runtime.sendMessage({ type: 'VIDEO_STATUS', bvId: state.bvId, hasSubtitle: state.hasSubtitle }).catch(() => {});
   }
 
   function showToast(msg, type = "info") {
@@ -559,13 +504,12 @@
     // 等待期间若发生新导航，放弃本次 init（新导航会重新调用 init）
     if (state.bvId !== targetBv) return;
 
-    await checkServer();
     extractVideoData();
+    reportVideoStatus(); // bridge 数据就绪后立即上报，hasSubtitle 已知
+    await checkServer();
+    if (state.bvId !== targetBv) return;
     await extractSubtitle();
-
-    if (!state.subtitleExtracted && !state.hasSubtitle) {
-      setTimeout(() => autoTriggerAsr(), 1000);
-    }
+    if (state.bvId !== targetBv) return;
 
     // 等待 video 元素（MutationObserver，不需要固定等待时间）
     const v = document.querySelector("video");
@@ -613,6 +557,33 @@
       if (uL) { uL.className = "bt-light " + msg.cls; uL.title = msg.title; }
       const genBtn = document.getElementById("bt-gensub");
       if (genBtn) genBtn.classList.toggle("hidden", !msg.showGenBtn);
+      sendResponse({});
+      return true;
+    }
+    if (msg.type === "SUMM_STATE") {
+      const btn = document.getElementById("bt-summary");
+      if (btn && state.bvId) {
+        const active = msg.currentBv === state.bvId;
+        const queued = msg.queue?.includes(state.bvId);
+        if (active) { btn.textContent = "总结中"; btn.classList.add("bt-loading"); }
+        else if (queued) { btn.textContent = "队列中"; btn.classList.add("bt-loading"); }
+        else if (!active && !queued) { btn.textContent = "总结"; btn.classList.remove("bt-loading"); }
+      }
+      sendResponse({});
+      return true;
+    }
+    if (msg.type === "SUMM_PROGRESS") {
+      if (msg.bvId !== state.bvId) { sendResponse({}); return true; }
+      const btn = document.getElementById("bt-summary");
+      if (msg.error) {
+        showToast('总结失败: ' + msg.error, 'error');
+        if (btn) { btn.textContent = "总结"; btn.classList.remove("bt-loading"); }
+      } else if (msg.progress) {
+        if (btn) { btn.textContent = "总结中"; btn.classList.add("bt-loading"); }
+      } else if (msg.done) {
+        fetchBalance();
+        if (btn) { btn.textContent = "总结"; btn.classList.remove("bt-loading"); }
+      }
       sendResponse({});
       return true;
     }
