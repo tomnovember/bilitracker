@@ -95,6 +95,21 @@ function setSubBadge(state, text, showGenBtn, genBtnLabel) {
   const btn = document.getElementById('btn-gen-sub');
   btn.style.display = showGenBtn ? '' : 'none';
   if (showGenBtn) btn.textContent = genBtnLabel || '生成字幕';
+  // 推送给悬浮窗
+  const cls = state === 'ok' ? 'bt-green'
+    : state === 'warn' ? (text.includes('转写') ? 'bt-asr' : 'bt-yellow')
+    : 'bt-gray';
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]?.id) chrome.tabs.sendMessage(tabs[0].id, {
+      type: 'UPDATE_SUB_STATUS', cls, title: text, showGenBtn: !!showGenBtn,
+    }).catch(() => {});
+  });
+}
+
+function notifyContentSubtitleReady() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]?.id) chrome.tabs.sendMessage(tabs[0].id, { type: 'SUBTITLE_READY' }).catch(() => {});
+  });
 }
 
 function fmtChars(n) {
@@ -106,9 +121,8 @@ function fmtChars(n) {
 
 // 根据服务器返回的视频信息统一更新字幕状态
 function _asrStatusText(bvId) {
-  const entry = _asrState.get(bvId);
-  if (entry?.status === 'running') return '转写中...';
-  if (entry?.status === 'waiting') return '检测字幕...';
+  if (_asrState.get(bvId)?.status === 'waiting') return '检测字幕...';
+  if (_bgAsr.currentBv === bvId) return '转写中...';
   return '排队中...';
 }
 
@@ -132,100 +146,28 @@ function applySubtitleStatus(v) {
 }
 
 // ── 生成字幕按钮 ──
-document.getElementById('btn-gen-sub').addEventListener('click', async () => {
+document.getElementById('btn-gen-sub').addEventListener('click', () => {
   if (!currentBvId) return;
-  const btn = document.getElementById('btn-gen-sub');
-  btn.disabled = true;
-  setSubBadge('warn', '准备中...');
+  chrome.runtime.sendMessage({ type: 'ENQUEUE_ASR', bvId: currentBvId });
+  setSubBadge('warn', '排队中...');
   pbReset();
-
-  try {
-    const r = await fetch(API + '/api/extract_subtitle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        bv_id: currentBvId,
-        whisper_model: document.getElementById('whisper-model').value
-      })
-    });
-    if (!r.ok) {
-      const e = await r.json().catch(() => ({}));
-      setSubBadge('off', '失败', true);
-      appendSubError(e.detail || '字幕生成失败');
-      return;
-    }
-    const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
-    while (true) {
-      const { done, value } = await reader.read(); if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const lines = buf.split('\n'); buf = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const d = JSON.parse(line.slice(6));
-          if (d.error) {
-            pbDone();
-            setSubBadge('off', '失败', true);
-            appendSubError(d.error);
-            return;
-          }
-          if (d.progress) {
-            pbShow(d.progress);
-            setSubBadge('warn', '转写中...');
-          }
-          if (d.done) {
-            pbDone();
-            const cnt = d.char_count ? ' ' + fmtChars(d.char_count) : '';
-            setSubBadge('ok', '字幕 ✓' + cnt);
-            chatSessionId = null;
-            notifyContentSubtitleReady();
-          }
-        } catch {}
-      }
-    }
-  } catch (e) {
-    pbDone();
-    setSubBadge('off', '失败', true);
-    appendSubError(e.message.includes('fetch') ? 'Server 未连接' : e.message);
-  } finally {
-    btn.disabled = false;
-  }
 });
 
-function appendSubError(msg) {
-  const msgs = document.getElementById('c-msgs');
-  const div = document.createElement('div');
-  div.className = 'msg b';
-  div.style.color = '#f55050';
-  div.textContent = '字幕生成失败: ' + msg;
-  msgs.appendChild(div);
-  msgs.scrollTop = msgs.scrollHeight;
-}
-
-// ASR 状态机：单一 Map 替代 _asrEnqueued + _asrTimers 两个集合
-// status: 'waiting'（5s 观察期）| 'queued'（队列中）| 'running'（转写中）
-const _asrState = new Map(); // bvId → { status, timer? }
+// 本地仅跟踪 5s 等待期的 timer，队列实际由 background.js 管理
+const _asrState = new Map(); // bvId → { status:'waiting', timer }
+let _bgAsr = { busy: false, currentBv: null, queue: [] }; // background ASR 状态影子
 
 function _maybeEnqueueASR(bvId, hasSubtitleAlready) {
   if (hasSubtitleAlready) {
     const entry = _asrState.get(bvId);
-    if (entry?.status === 'waiting') {
-      clearTimeout(entry.timer);
-      _asrState.delete(bvId);
-    } else if (entry?.status === 'queued') {
-      const idx = asrQueue.indexOf(bvId);
-      if (idx > -1) asrQueue.splice(idx, 1);
-      _asrState.delete(bvId);
-    }
-    // 'running' 无法取消，让它自然完成
+    if (entry?.status === 'waiting') { clearTimeout(entry.timer); _asrState.delete(bvId); }
     return false;
   }
   if (!autoAsr || !bvId) return false;
-  if (_asrState.has(bvId)) return true; // 已在状态机中
-  // 延迟 5s：等 content.js 初始化、B站字幕检测完成后再确认
+  if (_asrState.has(bvId) || _bgAsr.currentBv === bvId || _bgAsr.queue.includes(bvId)) return true;
   const timer = setTimeout(() => {
-    _asrState.set(bvId, { status: 'queued' });
-    enqueueASR(bvId);
+    _asrState.delete(bvId);
+    chrome.runtime.sendMessage({ type: 'ENQUEUE_ASR', bvId });
   }, 5000);
   _asrState.set(bvId, { status: 'waiting', timer });
   return true;
@@ -247,6 +189,7 @@ async function applySubtitleStatusFromDB(bvId, hasSub) {
 // ── 视频信息 ──
 // tabs 由调用方传入，避免重复查询
 async function loadVideoInfo() {
+  setSubBadge('off', '检测中…', false);
   let tab = null;
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -314,92 +257,20 @@ async function fallbackFromTab(tab) {
   }
 }
 
-// ── ASR 自动转写队列 ──
-const asrQueue = [];       // 等待转写的 bvId 列表
-let asrBusy = false;       // 是否正在转写
-let asrCurrentBv = null;   // 当前转写的 bvId
-
-function enqueueASR(bvId) {
-  if (asrCurrentBv === bvId) return;          // 正在转写此视频
-  const idx = asrQueue.indexOf(bvId);
-  if (idx > -1) asrQueue.splice(idx, 1);      // 已在队列中则先移除
-  asrQueue.unshift(bvId);                     // 插到队首（最高优先级）
-  if (asrQueue.length > 50) asrQueue.length = 50;
-  updateAsrBar();
-  processASRQueue();
-}
-
 function updateAsrBar() {
   const bar = document.getElementById('asr-queue-bar');
   const txt = document.getElementById('asr-queue-text');
-  if (!asrBusy && asrQueue.length === 0) { bar.style.display = 'none'; return; }
+  if (!_bgAsr.busy && _bgAsr.queue.length === 0) { bar.style.display = 'none'; return; }
   bar.style.display = 'block';
   const parts = [];
-  if (asrBusy && asrCurrentBv) {
-    const isCurrent = asrCurrentBv === currentBvId;
-    parts.push(isCurrent ? '转写中（当前视频）' : `转写中: ${asrCurrentBv}`);
+  if (_bgAsr.busy && _bgAsr.currentBv) {
+    parts.push(_bgAsr.currentBv === currentBvId ? '转写中（当前视频）' : `转写中: ${_bgAsr.currentBv}`);
   }
-  if (asrQueue.length > 0) parts.push(`队列: ${asrQueue.length} 个`);
+  if (_bgAsr.queue.length > 0) parts.push(`队列: ${_bgAsr.queue.length} 个`);
   txt.textContent = parts.join(' · ');
 }
 
-async function processASRQueue() {
-  if (asrBusy) return; // 防止重入
-  while (asrQueue.length > 0) {
-    asrBusy = true;
-    asrCurrentBv = asrQueue.shift();
-    _asrState.set(asrCurrentBv, { status: 'running' });
-    updateAsrBar();
-
-    try {
-      const whisperModel = document.getElementById('whisper-model').value;
-      const keepAudio = false;
-      const r = await fetch(API + '/api/extract_subtitle', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bv_id: asrCurrentBv, whisper_model: whisperModel, keep_audio: keepAudio })
-      });
-      if (!r.ok) throw new Error('request failed');
-
-      const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
-      while (true) {
-        const { done, value } = await reader.read(); if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n'); buf = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const d = JSON.parse(line.slice(6));
-            if (asrCurrentBv === currentBvId) {
-              if (d.progress) { pbShow(d.progress); setSubBadge('warn', '转写中...'); }
-              if (d.error) { pbDone(); setSubBadge('off', '无字幕', true); }
-              if (d.done) {
-                pbDone();
-                const cnt = d.char_count ? ' ' + fmtChars(d.char_count) : '';
-                setSubBadge('ok', '字幕 ✓' + cnt);
-                chatSessionId = null;
-                notifyContentSubtitleReady();
-              }
-            }
-          } catch {}
-        }
-      }
-    } catch {}
-
-    _asrState.delete(asrCurrentBv); // 处理完成，释放状态
-    asrBusy = false;
-    asrCurrentBv = null;
-    updateAsrBar();
-  }
-}
-
-// ── 通知悬浮窗字幕已就绪 ──
-function notifyContentSubtitleReady() {
-  chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-    if (tabs[0]?.id) {
-      chrome.tabs.sendMessage(tabs[0].id, { type: 'SUBTITLE_READY' }).catch(() => {});
-    }
-  });
-}
+// processASRQueue 已迁移到 background.js，sidebar 通过 ASR_PROGRESS 消息更新 UI
 
 // ── 历史对话 ──
 let _historySessions = [];
@@ -621,6 +492,7 @@ function renderSummary(text, container) {
 // ── 生成总结（流式积累，done 后渲染结构化）──
 document.getElementById('summ-btn').addEventListener('click', async () => {
   if (!currentBvId) return;
+  const bvId = currentBvId;
   const summBtn = document.getElementById('summ-btn');
   const sendBtn = document.getElementById('c-send');
   const input = document.getElementById('c-input');
@@ -644,7 +516,7 @@ document.getElementById('summ-btn').addEventListener('click', async () => {
     const r = await fetch(API + '/api/summarize', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        bv_id: currentBvId, model: chatModel,
+        bv_id: bvId, model: chatModel,
         whisper_model: document.getElementById('whisper-model').value,
         force: isRedo
       })
@@ -667,33 +539,36 @@ document.getElementById('summ-btn').addEventListener('click', async () => {
         try {
           const d = JSON.parse(line.slice(6));
           if (d.error) {
-            pbDone(); mainDiv.style.color = '#f55050'; mainDiv.textContent = '错误: ' + d.error;
-            setSubBadge('off', '无字幕', true); return;
+            if (bvId === currentBvId) { pbDone(); mainDiv.style.color = '#f55050'; mainDiv.textContent = '错误: ' + d.error; setSubBadge('off', '无字幕', true); }
+            return;
           }
-          if (d.progress) {
+          if (d.progress && bvId === currentBvId) {
             mainDiv.style.color = '#9a7858'; mainDiv.textContent = d.progress; pbShow(d.progress);
             if (d.progress.includes('下载音频') || d.progress.includes('加载 Whisper') || d.progress.includes('转写音频')) {
               setSubBadge('warn', '转写中...'); asrRan = true;
             }
           }
           if (d.delta) {
-            if (fullDelta.length === 0) {
+            if (fullDelta.length === 0 && bvId === currentBvId) {
               mainDiv.textContent = ''; mainDiv.style.color = '';
-              setSubBadge('ok', '字幕 ✓');
+              if (asrRan) setSubBadge('ok', '字幕 ✓');
             }
             fullDelta.push(d.delta);
             mainDiv.textContent += d.delta;
-            msgs.scrollTop = msgs.scrollHeight;
+            if (bvId === currentBvId) msgs.scrollTop = msgs.scrollHeight;
           }
           if (d.done) {
-            pbDone(); loadBalance();
-            notifyContentSubtitleReady();
-            if (asrRan) { chatSessionId = null; }
+            loadBalance();
+            if (bvId === currentBvId) {
+              pbDone();
+              notifyContentSubtitleReady();
+              if (asrRan) { chatSessionId = null; applySubtitleStatusFromDB(bvId, true); }
+              summBtn.textContent = '重新总结';
+            }
             const raw = fullDelta.join('');
             renderSummary(raw, mainDiv);
             bubble._data = { type: 'summary', raw };
-            summBtn.textContent = '重新总结';
-            msgs.scrollTop = msgs.scrollHeight;
+            if (bvId === currentBvId) msgs.scrollTop = msgs.scrollHeight;
           }
         } catch {}
       }
@@ -710,7 +585,6 @@ document.getElementById('summ-btn').addEventListener('click', async () => {
 
 // ── 对话发送 ──
 let lastChatText = '';
-let _activeBubble = null;
 
 async function sendChat(retryText) {
   const input = document.getElementById('c-input');
@@ -867,6 +741,7 @@ function restoreVideoState(bvId) {
   const msgs = document.getElementById('c-msgs');
   msgs.innerHTML = '';
   chatSessionId = null;
+  document.getElementById('summ-btn').textContent = '总结';
   const st = videoStates[bvId];
   if (!st?.messages?.length) return;
   chatSessionId = st.sessionId;
@@ -888,6 +763,8 @@ function restoreVideoState(bvId) {
     }
   });
   msgs.scrollTop = msgs.scrollHeight;
+  if (st.messages.some(m => m.type === 'summary'))
+    document.getElementById('summ-btn').textContent = '重新总结';
 }
 
 // ── 视频切换检测 + 设置同步（事件驱动，无轮询）──
@@ -907,8 +784,6 @@ async function onVideoChanged() {
       lastBv = currentBvId;
       _historyLoadedBv = null;
       restoreVideoState(currentBvId);
-      const entry = _asrState.get(currentBvId);
-      if (entry?.status === 'queued') enqueueASR(currentBvId);
     }
   } finally {
     _updating = false;
@@ -916,9 +791,28 @@ async function onVideoChanged() {
   }
 }
 
-// content.js 导航时推送
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "VIDEO_CHANGED") onVideoChanged();
+
+  // background.js 广播 ASR 队列状态变化
+  if (msg.type === "ASR_STATE") {
+    _bgAsr = { busy: msg.busy, currentBv: msg.currentBv, queue: msg.queue };
+    updateAsrBar();
+  }
+
+  // background.js 广播 ASR 进度（只处理当前视频）
+  if (msg.type === "ASR_PROGRESS") {
+    _asrState.delete(msg.bvId);
+    if (msg.bvId === currentBvId) {
+      if (msg.error)    { pbDone(); setSubBadge('off', '无字幕', true); }
+      if (msg.progress) { pbShow(msg.progress); setSubBadge('warn', '转写中...'); }
+      if (msg.done) {
+        pbDone();
+        chatSessionId = null;
+        applySubtitleStatusFromDB(currentBvId, true); // 从 DB 拿正确字数
+      }
+    }
+  }
 });
 
 // sidebar 从后台切回时刷新
@@ -930,5 +824,9 @@ document.addEventListener("visibilitychange", () => {
 setInterval(loadSettings, 30000);
 
 // 先加载设置再初始化视频信息，确保 autoAsr 状态正确；版本检查只跑一次
+// 打开时同步 background 当前 ASR 状态
+chrome.runtime.sendMessage({ type: 'GET_ASR_STATE' }, (resp) => {
+  if (resp) { _bgAsr = resp; updateAsrBar(); }
+});
 loadSettings().finally(() => onVideoChanged());
 checkVersionOnce();

@@ -33,7 +33,6 @@
     serverConnected: false,
     subtitleData: null,
     autoAsr: true,
-    asrRunning: false,
   };
 
   let _checkServerInterval = null;
@@ -448,9 +447,9 @@
       e.stopPropagation();
       await triggerSummary();
     });
-    document.getElementById("bt-gensub").addEventListener("click", async (e) => {
+    document.getElementById("bt-gensub").addEventListener("click", (e) => {
       e.stopPropagation();
-      await triggerGenSub();
+      chrome.runtime.sendMessage({ type: "TRIGGER_ASR", bvId: state.bvId });
     });
   }
 
@@ -465,24 +464,10 @@
 
   function updateStatusLights() {
     const sL = document.getElementById("bt-light-server");
-    const uL = document.getElementById("bt-light-sub");
-    if (!sL || !uL) return;
+    if (!sL) return;
     sL.className = "bt-light " + (state.serverConnected ? "bt-green" : "bt-red");
     sL.title = state.serverConnected ? "Server已连接" : "Server未连接";
-    const genBtn = document.getElementById("bt-gensub");
-    if (state.subtitleExtracted) {
-      uL.className = "bt-light bt-green"; uL.title = "字幕已提取 ✓";
-      if (genBtn) genBtn.classList.add("hidden");
-    } else if (state.asrRunning) {
-      uL.className = "bt-light bt-asr"; uL.title = "转写中...";
-      if (genBtn) genBtn.classList.add("hidden");
-    } else if (state.hasSubtitle) {
-      uL.className = "bt-light bt-yellow"; uL.title = "有字幕，提取中...";
-      if (genBtn) genBtn.classList.add("hidden");
-    } else {
-      uL.className = "bt-light bt-gray"; uL.title = "无字幕";
-      if (genBtn) genBtn.classList.toggle("hidden", state.autoAsr);
-    }
+    // 字幕状态灯由 sidebar 通过 UPDATE_SUB_STATUS 推送，这里不自管
   }
 
   // ── 总结 ──
@@ -529,92 +514,11 @@
     finally { btn.textContent = "总结"; btn.classList.remove("bt-loading"); }
   }
 
-  // ── 自动 ASR（无侧边栏时后台触发）──
-  async function autoTriggerAsr() {
-    if (!state.autoAsr || !state.bvId || !state.serverConnected) return;
+  // ── 自动 ASR：交给 background.js 处理，sidebar 不必打开 ──
+  function autoTriggerAsr() {
+    if (!state.bvId || !state.serverConnected) return;
     if (state.hasSubtitle || state.subtitleExtracted) return;
-
-    try {
-      const r = await fetch(`${SERVER}/api/video/${state.bvId}`, { signal: AbortSignal.timeout(3000) });
-      if (r.ok) {
-        const v = await r.json();
-        if (v.subtitle_in_db) { state.subtitleExtracted = true; updateStatusLights(); return; }
-      }
-    } catch {}
-
-    state.asrRunning = true;
-    updateStatusLights();
-    try {
-      const r = await fetch(`${SERVER}/api/extract_subtitle`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bv_id: state.bvId })
-      });
-      if (!r.ok) return;
-      const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
-      while (true) {
-        const { done, value } = await reader.read(); if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n'); buf = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const d = JSON.parse(line.slice(6));
-            if (d.done) {
-              state.subtitleExtracted = true;
-              if (d.char_count) showToast(`字幕自动转写完成（${d.char_count}字）`, "info");
-            }
-          } catch {}
-        }
-      }
-    } catch {}
-    state.asrRunning = false;
-    updateStatusLights();
-  }
-
-  // ── 生成字幕（ASR）──
-  async function triggerGenSub() {
-    const btn = document.getElementById("bt-gensub");
-    if (!btn || !state.bvId) return;
-    if (!state.serverConnected) { showToast("Server未连接", "error"); return; }
-    btn.textContent = "转写中..."; btn.classList.add("bt-loading");
-    state.asrRunning = true;
-    updateStatusLights();
-    try {
-      const r = await fetch(`${SERVER}/api/extract_subtitle`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bv_id: state.bvId })
-      });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        showToast(err.detail || "字幕生成失败", "error");
-        return;
-      }
-      const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
-      while (true) {
-        const { done, value } = await reader.read(); if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n'); buf = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const d = JSON.parse(line.slice(6));
-            if (d.error) { showToast('错误: ' + d.error, 'error'); return; }
-            if (d.progress) { btn.textContent = d.progress.slice(0, 6) + '...'; }
-            if (d.done) {
-              state.subtitleExtracted = true;
-              btn.classList.add("hidden");
-              showToast(`字幕生成完成（${d.char_count || ''}字）`, "info");
-            }
-          } catch {}
-        }
-      }
-    } catch (e) {
-      showToast("请求失败: " + e.message, "error");
-    } finally {
-      state.asrRunning = false;
-      updateStatusLights();
-      btn.textContent = "字幕"; btn.classList.remove("bt-loading");
-    }
+    chrome.runtime.sendMessage({ type: 'AUTO_ASR', bvId: state.bvId });
   }
 
   function showSummaryPanel(text) {
@@ -701,8 +605,15 @@
     }
     if (msg.type === "SUBTITLE_READY") {
       state.subtitleExtracted = true;
-      updateStatusLights();
       sendResponse({ ok: true });
+      return true;
+    }
+    if (msg.type === "UPDATE_SUB_STATUS") {
+      const uL = document.getElementById("bt-light-sub");
+      if (uL) { uL.className = "bt-light " + msg.cls; uL.title = msg.title; }
+      const genBtn = document.getElementById("bt-gensub");
+      if (genBtn) genBtn.classList.toggle("hidden", !msg.showGenBtn);
+      sendResponse({});
       return true;
     }
   });
