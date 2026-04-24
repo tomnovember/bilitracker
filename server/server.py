@@ -157,7 +157,7 @@ class RecordPayload(BaseModel):
 
 class SummarizeRequest(BaseModel):
     bv_id: str
-    model: str = "deepseek-chat"
+    model: str = "deepseek-v4-flash"
     whisper_model: str = "large-v3-turbo"
     force: bool = False  # True = 跳过缓存，强制重新生成
 
@@ -312,7 +312,7 @@ UP主：{video['up_name'] or ''}　时长：{_fmt_dur(video['duration'] or 0)}
 
         full = []
         try:
-            summary_model = "deepseek-chat"
+            summary_model = "deepseek-v4-flash"
             async with httpx.AsyncClient(timeout=120) as client:
                 async with client.stream(
                     "POST", f"{DEEPSEEK_BASE_URL}/chat/completions",
@@ -407,7 +407,7 @@ async def tag_video(req: dict):
             resp = await client.post(
                 f"{DEEPSEEK_BASE_URL}/chat/completions",
                 headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"},
-                json={"model": "deepseek-chat", "messages": [{"role": "user", "content": prompt}],
+                json={"model": "deepseek-v4-flash", "messages": [{"role": "user", "content": prompt}],
                       "max_tokens": 100, "temperature": 0.3}
             )
             resp.raise_for_status()
@@ -860,7 +860,7 @@ async def chat(req: dict):
     if not DEEPSEEK_API_KEY:
         raise HTTPException(501, "请在面板→设置中配置 API Key")
 
-    model = req.get("model", "deepseek-chat")
+    model = req.get("model", "deepseek-v4-flash")
     messages = req.get("messages", [])
     bv_id = req.get("bv_id")  # 可选：绑定视频上下文
 
@@ -920,7 +920,7 @@ async def create_session(req: dict):
     import uuid
     sid = str(uuid.uuid4())[:8]
     bv_id = req.get("bv_id")
-    model = req.get("model", "deepseek-chat")
+    model = req.get("model", "deepseek-v4-flash")
     include_stats = req.get("include_stats", False)
     create_chat_session(sid, bv_id, model, include_stats)
     return {"session_id": sid}
@@ -1259,7 +1259,7 @@ async def get_settings():
     ds = saved.setdefault('providers', {}).setdefault('deepseek', {})
     if not ds.get('api_key'):   ds['api_key']      = DEEPSEEK_API_KEY or ""
     if not ds.get('api_base_url'): ds['api_base_url'] = DEEPSEEK_BASE_URL or "https://api.deepseek.com/v1"
-    if not ds.get('default_model'): ds['default_model'] = "deepseek-chat"
+    if not ds.get('default_model'): ds['default_model'] = "deepseek-v4-flash"
     result = {
         "auto_asr":        saved.get('auto_asr', True),
         "whisper_model":   saved.get('whisper_model', 'large-v3-turbo'),

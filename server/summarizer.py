@@ -16,13 +16,13 @@ async def generate_summary(
     up_name: str,
     duration: int,
     subtitle_text: str,
-    model: str = "deepseek-chat"
+    model: str = "deepseek-v4-flash"
 ) -> str:
     """调用DeepSeek API生成视频总结"""
     if not DEEPSEEK_API_KEY:
         raise RuntimeError("未设置DEEPSEEK_API_KEY环境变量")
 
-    # 截断超长字幕（DeepSeek V3.2 128K上下文，留足输出空间）
+    # 截断超长字幕（128K上下文，留足输出空间）
     max_chars = 50000
     if len(subtitle_text) > max_chars:
         subtitle_text = subtitle_text[:max_chars] + "\n\n[字幕内容过长，已截断]"

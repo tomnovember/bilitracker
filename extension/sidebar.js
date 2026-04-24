@@ -1,13 +1,13 @@
 const API = 'http://localhost:9876';
 let currentBvId = null;
 let currentVideo = null;
-let chatModel = 'deepseek-chat';
+let chatModel = 'deepseek-v4-flash';
 let chatSessionId = null;
 let autoAsr = true;  // loaded from server settings
 
 // ── Provider → models 映射 ──
 const SIDEBAR_PROVIDERS = {
-  deepseek:  [{id:'deepseek-chat',label:'V3.2'},{id:'deepseek-reasoner',label:'V3.2 思考'}],
+  deepseek:  [{id:'deepseek-v4-flash',label:'V4 Flash'},{id:'deepseek-v4-pro',label:'V4 Pro'}],
   qwen:      [{id:'qwen-max',label:'Max'},{id:'qwen-plus',label:'Plus'},{id:'qwen-turbo',label:'Turbo'},{id:'qwen-long',label:'Long'}],
   doubao:    [{id:'doubao-1.5-pro-32k',label:'1.5 Pro 32k'},{id:'doubao-1.5-pro-256k',label:'1.5 Pro 256k'},{id:'doubao-1.5-lite-32k',label:'1.5 Lite 32k'}],
   moonshot:  [{id:'moonshot-v1-8k',label:'8k'},{id:'moonshot-v1-32k',label:'32k'},{id:'moonshot-v1-128k',label:'128k'}],
@@ -72,7 +72,7 @@ async function loadSettings() {
     const provider = s.default_provider || 'deepseek';
     const models = SIDEBAR_PROVIDERS[provider] || [];
     const pcfg = (s.providers || {})[provider] || {};
-    const activeModel = pcfg.default_model || (models[0] ? models[0].id : 'deepseek-chat');
+    const activeModel = pcfg.default_model || (models[0] ? models[0].id : 'deepseek-v4-flash');
     const provLabel = document.getElementById('prov-label');
     if (provLabel) {
       const names = {deepseek:'DeepSeek',qwen:'通义千问',doubao:'豆包',moonshot:'Moonshot',zhipu:'智谱',openai:'OpenAI',google:'Google',anthropic:'Anthropic',openrouter:'OpenRouter',custom:'自定义'};

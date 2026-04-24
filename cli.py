@@ -171,7 +171,7 @@ def cmd_chat(bv_id=None):
         return
 
     sid = str(uuid.uuid4())[:8]
-    create_chat_session(sid, bv_id, "deepseek-chat", include_stats=True)
+    create_chat_session(sid, bv_id, "deepseek-v4-flash", include_stats=True)
 
     ctx = ""
     if bv_id:
@@ -232,7 +232,7 @@ def cmd_chat(bv_id=None):
                     resp = await client.post(
                         f"{DEEPSEEK_BASE_URL}/chat/completions",
                         headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"},
-                        json={"model": "deepseek-chat", "messages": full, "max_tokens": 4000}
+                        json={"model": "deepseek-v4-flash", "messages": full, "max_tokens": 4000}
                     )
                     resp.raise_for_status()
                     reply = resp.json()["choices"][0]["message"]["content"]

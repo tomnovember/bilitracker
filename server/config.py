@@ -19,7 +19,7 @@ PORT = 9876
 # DeepSeek API 默认配置（可在面板→设置中配置，无需重启）
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_MODEL = "deepseek-v4-flash"
 
 # Whisper模型大小：tiny(39M)/base(74M)/small(244M)/medium(769M)/large-v3(3GB)/large-v3-turbo(1.6GB,推荐)
 # 首次使用时自动从 HuggingFace 下载到本地缓存

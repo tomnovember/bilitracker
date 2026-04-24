@@ -563,7 +563,7 @@ def get_extended_stats() -> dict:
 
 # ── 对话记录 CRUD ──
 
-def create_chat_session(session_id: str, bv_id: str = None, model: str = "deepseek-chat", include_stats: bool = False, title: str = None) -> str:
+def create_chat_session(session_id: str, bv_id: str = None, model: str = "deepseek-v4-flash", include_stats: bool = False, title: str = None) -> str:
     conn = get_db()
     now = datetime.now().isoformat()
     conn.execute("""
